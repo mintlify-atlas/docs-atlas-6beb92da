@@ -1,0 +1,460 @@
+---
+title: 'Admin API — Clients, Users & Roles'
+description: 'Endpoints for managing clients, account groups, admin users, and RBAC roles in the UTRADE Robo Admin API. Requires JWT authentication.'
+---
+
+These endpoints cover the three organisational layers in the Admin API: **clients** (investor profiles), **account groups** (logical groupings of trading accounts), **admin users** (staff, TR, back-office accounts), and **roles** (RBAC configuration). All endpoints require a valid `Authorization: Bearer <accessToken>` header. Permission requirements are noted per endpoint.
+
+**Base URL (development):** `http://localhost:3002`
+
+---
+
+## Clients
+
+### GET /v1/clients
+
+List all client profiles with pagination and optional filters.
+
+<Note>
+Requires `clients:read` permission.
+</Note>
+
+#### Query parameters
+
+<ParamField query="page" type="number" default="1">
+  Page number (1-indexed).
+</ParamField>
+
+<ParamField query="limit" type="number" default="20">
+  Records per page.
+</ParamField>
+
+<ParamField query="search" type="string">
+  Search by client name, short name, or NRIC.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by status (e.g. `active`, `inactive`).
+</ParamField>
+
+<ParamField query="sortBy" type="string" default="createdAt">
+  Column to sort by.
+</ParamField>
+
+<ParamField query="sortOrder" type="string" default="DESC">
+  Sort direction: `ASC` or `DESC`.
+</ParamField>
+
+#### Response
+
+<ResponseField name="data" type="array" required>
+  Array of client objects.
+  <Expandable title="client object">
+    <ResponseField name="id" type="string">Client ID (e.g. `CLT-00000001`).</ResponseField>
+    <ResponseField name="name" type="string">Full name, nullable.</ResponseField>
+    <ResponseField name="shortName" type="string">Short name / alias, nullable.</ResponseField>
+    <ResponseField name="nric" type="string">National ID number, nullable.</ResponseField>
+    <ResponseField name="gender" type="string">Gender, nullable.</ResponseField>
+    <ResponseField name="dateOfBirth" type="string">Date of birth (`YYYY-MM-DD`), nullable.</ResponseField>
+    <ResponseField name="status" type="string">Client status (e.g. `active`).</ResponseField>
+    <ResponseField name="userId" type="string">Linked user ID, nullable.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 creation timestamp.</ResponseField>
+    <ResponseField name="updatedAt" type="string">ISO 8601 last-updated timestamp, nullable.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="total" type="number" required>Total number of matching records.</ResponseField>
+<ResponseField name="page" type="number" required>Current page.</ResponseField>
+<ResponseField name="limit" type="number" required>Records per page.</ResponseField>
+<ResponseField name="totalPages" type="number" required>Total number of pages.</ResponseField>
+
+```bash cURL
+curl "http://localhost:3002/v1/clients?page=1&limit=20&status=active" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### GET /v1/clients/:id
+
+Retrieve a single client by ID.
+
+<Note>
+Requires `clients:read` permission.
+</Note>
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>
+  Client ID (e.g. `CLT-00000001`).
+</ParamField>
+
+```bash cURL
+curl http://localhost:3002/v1/clients/CLT-00000001 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**200 OK — example response**
+
+```json
+{
+  "id": "CLT-00000001",
+  "name": "John Doe",
+  "shortName": "JD",
+  "nric": "S1234567A",
+  "gender": "Male",
+  "dateOfBirth": "1990-01-01",
+  "status": "active",
+  "userId": "USR-00000005",
+  "createdAt": "2024-01-15T10:00:00.000Z",
+  "updatedAt": "2024-01-15T10:00:00.000Z"
+}
+```
+
+**Common error responses**
+
+| Status | Description |
+|--------|-------------|
+| `404 Not Found` | No client with the given ID. |
+| `403 Forbidden` | Insufficient permissions. |
+
+---
+
+## Account Groups
+
+Account groups are logical classifications for trading accounts (e.g. Cash, Margin, Managed). Every account belongs to exactly one account group.
+
+### GET /v1/account-groups
+
+List account groups with pagination and optional filters.
+
+<Note>
+Requires `account-groups:read` permission.
+</Note>
+
+#### Query parameters
+
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="10">Records per page.</ParamField>
+<ParamField query="category" type="string">Filter by category (e.g. `Cash`, `Margin`, `Managed`).</ParamField>
+<ParamField query="tradeSource" type="string">Filter by trade source (e.g. `UTrade`).</ParamField>
+<ParamField query="orderBy" type="string">Column to sort by.</ParamField>
+<ParamField query="order" type="string" default="DESC">Sort direction: `ASC` or `DESC`.</ParamField>
+
+#### Response
+
+Array of account group objects.
+
+<ResponseField name="id" type="string">Account group ID (e.g. `AGR-00000001`).</ResponseField>
+<ResponseField name="name" type="string">Display name (e.g. `Premium Cash Account`).</ResponseField>
+<ResponseField name="category" type="string">Category (e.g. `Cash`).</ResponseField>
+<ResponseField name="tradeSource" type="string">Trade source identifier (e.g. `UTrade`).</ResponseField>
+<ResponseField name="createdAt" type="string">ISO 8601 creation timestamp.</ResponseField>
+<ResponseField name="updatedAt" type="string">ISO 8601 last-updated timestamp, nullable.</ResponseField>
+
+```bash cURL
+curl "http://localhost:3002/v1/account-groups?category=Cash" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### GET /v1/account-groups/:id
+
+Retrieve a single account group by ID.
+
+<ParamField path="id" type="string" required>Account group ID.</ParamField>
+
+```bash cURL
+curl http://localhost:3002/v1/account-groups/AGR-00000001 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### POST /v1/account-groups
+
+Create a new account group.
+
+<Note>
+Requires `account-groups:manage` permission.
+</Note>
+
+#### Request body
+
+<ParamField body="name" type="string" required>
+  Display name. Maximum 200 characters.
+</ParamField>
+
+<ParamField body="category" type="string" required>
+  Category (e.g. `Cash`, `Margin`, `Managed`). Maximum 20 characters.
+</ParamField>
+
+<ParamField body="tradeSource" type="string" required>
+  Trade source identifier (e.g. `UTrade`). Maximum 20 characters.
+</ParamField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/account-groups \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Premium Cash Account",
+    "category": "Cash",
+    "tradeSource": "UTrade"
+  }'
+```
+
+**201 Created** — returns the created account group object.
+
+---
+
+### PATCH /v1/account-groups/:id
+
+Update an existing account group's name, category, or trade source. All body fields are optional.
+
+<ParamField path="id" type="string" required>Account group ID to update.</ParamField>
+
+```bash cURL
+curl -X PATCH http://localhost:3002/v1/account-groups/AGR-00000001 \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{ "name": "Standard Cash Account" }'
+```
+
+---
+
+## Users
+
+These endpoints manage admin portal users (SystemAdministrator, BackOfficeUser, TradingRepresentative, Staff). Client-portal users are managed separately through the client onboarding flow.
+
+<Warning>
+Creating and deleting users is restricted to the `SystemAdministrator` role. Update and list operations require the `users:manage` permission.
+</Warning>
+
+### GET /v1/users
+
+List admin users with pagination and optional filters.
+
+#### Query parameters
+
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="10">Records per page.</ParamField>
+<ParamField query="role" type="string">Filter by role name (e.g. `TradingRepresentative`).</ParamField>
+<ParamField query="orderBy" type="string" default="createdAt">Column to sort by.</ParamField>
+<ParamField query="order" type="string" default="DESC">Sort direction: `ASC` or `DESC`.</ParamField>
+
+#### Response
+
+Array of user objects. Each user includes linked agent, client, and account relations where applicable.
+
+```bash cURL
+curl "http://localhost:3002/v1/users?role=TradingRepresentative&limit=20" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### GET /v1/users/:id
+
+Retrieve a single user with their related entities.
+
+<ParamField path="id" type="string" required>User ID.</ParamField>
+
+```bash cURL
+curl http://localhost:3002/v1/users/USR-00000001 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### POST /v1/users
+
+Create a new admin user.
+
+<Note>
+Restricted to `SystemAdministrator` role.
+</Note>
+
+#### Request body
+
+<ParamField body="username" type="string" required>
+  Unique login username. Minimum 3 characters. Stored lowercase.
+</ParamField>
+
+<ParamField body="companyId" type="string" required>
+  Company this user belongs to (e.g. `COM-00000001`).
+</ParamField>
+
+<ParamField body="password" type="string">
+  Initial password. Minimum 6 characters. If omitted, the user must reset their password on first login.
+</ParamField>
+
+<ParamField body="roleId" type="string">
+  Role ID to assign (e.g. `ROLE-00000001`). Defaults to the base `User` role if not provided.
+</ParamField>
+
+<ParamField body="firstName" type="string">First name.</ParamField>
+
+<ParamField body="lastName" type="string">Last name.</ParamField>
+
+<ParamField body="contactId" type="string">Optional linked contact ID.</ParamField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/users \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "truser01",
+    "companyId": "COM-00000001",
+    "password": "SecurePass123",
+    "roleId": "ROLE-00000002",
+    "firstName": "Jane",
+    "lastName": "Smith"
+  }'
+```
+
+**201 Created** — returns the created user object.
+
+---
+
+### PATCH /v1/users/:id
+
+Update an existing user's profile. All body fields are optional.
+
+<ParamField path="id" type="string" required>User ID to update.</ParamField>
+
+#### Request body
+
+<ParamField body="username" type="string">New username. Minimum 3 characters.</ParamField>
+<ParamField body="password" type="string">New password. Minimum 6 characters.</ParamField>
+<ParamField body="roleId" type="string">New role ID.</ParamField>
+<ParamField body="firstName" type="string">First name.</ParamField>
+<ParamField body="lastName" type="string">Last name.</ParamField>
+
+```bash cURL
+curl -X PATCH http://localhost:3002/v1/users/USR-00000002 \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{ "firstName": "Jane", "lastName": "Doe" }'
+```
+
+---
+
+### DELETE /v1/users/:id
+
+Soft-delete a user. Cascades to related entities:
+- **Agent role** — soft-deletes the agent record and their linked accounts.
+- **Client role** — soft-deletes the client, all client-account links, and associated accounts.
+
+`204 No Content` on success.
+
+```bash cURL
+curl -X DELETE http://localhost:3002/v1/users/USR-00000002 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+## Roles
+
+Roles define permission sets used by the RBAC system. Permissions use the format `resource:action` with an optional scope (`global`, `company`, `branch`, `own`).
+
+### GET /v1/roles
+
+List all roles. Pass `includePermissions=true` to include the full permission list for each role.
+
+<Note>
+Requires `roles:manage` permission.
+</Note>
+
+#### Query parameters
+
+<ParamField query="includePermissions" type="boolean" default="false">
+  When `true`, each role object includes its `permissions` array.
+</ParamField>
+
+```bash cURL
+curl "http://localhost:3002/v1/roles?includePermissions=true" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**200 OK — example response**
+
+```json
+[
+  {
+    "id": "ROLE-00000001",
+    "name": "SystemAdministrator",
+    "displayName": "System Administrator",
+    "description": "Full system access",
+    "isSystem": true,
+    "permissions": [
+      { "code": "users:manage", "resource": "users", "action": "manage", "scope": "global" }
+    ],
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-01T00:00:00.000Z"
+  }
+]
+```
+
+---
+
+### POST /v1/roles
+
+Create a new role with an optional initial set of permissions.
+
+#### Request body
+
+<ParamField body="name" type="string" required>
+  Internal role name. Must be unique.
+</ParamField>
+
+<ParamField body="displayName" type="string" required>
+  Human-readable label shown in the UI.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional description of this role's purpose.
+</ParamField>
+
+<ParamField body="permissions" type="array">
+  Initial permissions to attach.
+  <Expandable title="permission item">
+    <ResponseField name="code" type="string">Permission code (e.g. `portfolios:read`).</ResponseField>
+    <ResponseField name="scope" type="string">Scope: `global`, `company`, `branch`, or `own`.</ResponseField>
+  </Expandable>
+</ParamField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/roles \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "ReportViewer",
+    "displayName": "Report Viewer",
+    "description": "Read-only access to reports",
+    "permissions": [
+      { "code": "reports:read", "scope": "company" }
+    ]
+  }'
+```
+
+---
+
+### PATCH /v1/roles/:id
+
+Update a role's name, display name, or description.
+
+<Warning>
+System roles cannot have their `name` changed, only `displayName` and `description`.
+</Warning>
+
+<ParamField path="id" type="string" required>Role ID.</ParamField>
+
+```bash cURL
+curl -X PATCH http://localhost:3002/v1/roles/ROLE-00000005 \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{ "displayName": "Senior Report Viewer" }'
+```

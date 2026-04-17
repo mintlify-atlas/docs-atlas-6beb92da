@@ -1,0 +1,152 @@
+---
+title: "User Management: Roles, Organisation, and System Settings"
+description: "Create and manage admin portal users, define roles and permissions, configure the company and branch hierarchy, manage TR codes, and set system parameters."
+---
+
+User management in the admin portal covers everything that governs who can do what: creating and editing admin user accounts, defining roles with specific permission sets, structuring the organisation hierarchy from company down to TR code, and tuning system-wide parameters. All pages in this section require the `users:read`, `roles:read`, or `settings:read` permission depending on the area.
+
+## Admin users
+
+Navigate to `/user-management` to see all admin portal users. The list shows each user's username, first and last name, assigned role, company, status, and last login time.
+
+### Creating a new admin user
+
+<Steps>
+  <Step title="Open the new user form">
+    Click **New user** on the user management page.
+  </Step>
+  <Step title="Fill in the user details">
+    Provide the following fields:
+    - **Username** — must be unique across the platform
+    - **Password** — set an initial password for the user
+    - **First name** and **last name**
+    - **Role** — select from the available roles (see [Roles](#roles) below)
+    - **Company** — optionally assign the user to a specific company ID
+    - **Department** — optional
+  </Step>
+  <Step title="Save the user">
+    Submit the form. The user record is created in both the local database and provisioned in Keycloak via the onboarding adapter. The user can now log in to the admin portal with their credentials.
+  </Step>
+</Steps>
+
+### Editing a user
+
+Open a user record to update their first name, last name, role, or password. Username and company ID cannot be changed after creation. To deactivate a user, update their status to inactive — this prevents login without deleting the record.
+
+<Warning>
+  Deleting a user (`DELETE /v1/users/:id`) is a hard delete. Deactivating the user is the preferred approach to preserve audit history.
+</Warning>
+
+## Roles
+
+Navigate to `/roles` to manage the roles that control access across the portal. Roles have a `userType` of `admin`, `agent`, or `client` — only roles with `userType: admin` are relevant for the admin portal.
+
+### Role structure
+
+Each role record contains:
+- **Name** — internal identifier (e.g. `BACK_OFFICE_USER`)
+- **Display name** — human-readable label shown in the UI
+- **Description** — optional explanation of the role's purpose
+- **System role** flag — system roles cannot be deleted
+- **Permissions** — a list of permission codes attached to the role
+
+### Permission codes
+
+Permissions follow the `resource:action` format. The platform supports four scope levels that determine how broadly the permission applies: `global > company > branch > own`. A user with `global` scope can act on all records; `own` scope restricts them to records they created or own.
+
+Common permission codes used in the admin portal:
+
+| Code | Grants access to |
+|---|---|
+| `clients:read` | Client list and detail |
+| `clients:write` | Create and edit clients |
+| `account-groups:read` | Account group list |
+| `account-groups:write` | Create and edit account groups |
+| `portfolio-templates:read` | Portfolio template list |
+| `portfolios:read` | User portfolio list |
+| `instruments:read` | Instrument catalogue |
+| `portfolio-requests:read` | Portfolio request queue |
+| `withdraw-requests:read` | Withdrawal request queue |
+| `funding-requests:read` | Funding request queue |
+| `questionnaires:read` | Questionnaire management |
+| `holdings:read` | Holdings overview |
+| `import:read` | Batch import history |
+| `reports:read` | Reports |
+| `users:read` | User management |
+| `roles:read` | Role management |
+| `settings:read` | Organisation and system settings |
+
+### Creating and editing roles
+
+<Steps>
+  <Step title="Open the new role form">
+    Click **New role** on the roles page.
+  </Step>
+  <Step title="Define the role">
+    Enter a name, display name, optional description, and set `userType` to `admin` for an admin portal role.
+  </Step>
+  <Step title="Assign permissions">
+    Select the permission codes to attach to this role. Use the permission list to add or remove individual codes. The role grants exactly the permissions listed — there is no implicit inheritance between roles.
+  </Step>
+  <Step title="Save">
+    Submit the form. Users assigned this role immediately gain the new permission set on their next authenticated request.
+  </Step>
+</Steps>
+
+<Note>
+  System roles (where `isSystem: true`) can have their permissions updated but cannot be deleted from the UI.
+</Note>
+
+## Organisation structure
+
+The organisation hierarchy at `/organization` controls how clients, accounts, agents, and TR codes are grouped. The structure flows from top to bottom:
+
+```
+Company
+  └── Branch
+        └── Agent
+              └── TR Code
+                    ├── Account (via tr-code-account)
+                    └── Client (via tr-code-client)
+```
+
+<Tabs>
+  <Tab title="Companies">
+    Companies are the top-level organisational unit. Each company has a name, optional short name, and status. The platform currently operates with a single default company (`COM-00000001`), but the structure supports multiple companies for future expansion. Portfolios and portfolio templates are scoped to a company ID.
+  </Tab>
+  <Tab title="Branches">
+    Branches belong to a company. Create a branch by providing a name and selecting the parent company. Branch records group agents for reporting and permission scoping purposes.
+  </Tab>
+  <Tab title="Agents">
+    Agents are individuals or teams within a branch. Each agent record has a name, optional short name, a trade source identifier, and a reference to their parent branch. Agents are the link between the organisation hierarchy and the TR codes used for trading.
+  </Tab>
+  <Tab title="TR codes">
+    A TR (Trading Representative) code is assigned to an agent and links that agent to specific accounts and clients. Create a TR code by providing the code string and selecting the parent agent. Once created, the TR code can be associated with accounts and clients through the account management workflows.
+
+    The TR code relationships (`tr-code-account`, `tr-code-client`) determine which trading representative is responsible for a given account or client, and feed into permission scoping at the `branch` and `own` scope levels.
+  </Tab>
+</Tabs>
+
+### Permission inheritance through the hierarchy
+
+When a user's permission scope is set to `company`, they can act on all records within their company. `branch` scope limits them to records in their branch. `own` scope limits them to records they are personally responsible for (via their TR code or agent record). The `global` scope bypasses hierarchy restrictions entirely and is typically reserved for `SYSTEM_ADMINISTRATOR` users.
+
+## System settings
+
+Navigate to `/system-settings` to manage platform-wide configuration parameters. These are stored in the `parameter` entity and control behaviour across the system.
+
+<AccordionGroup>
+  <Accordion title="What can be configured">
+    System settings include operational parameters such as request expiry windows, risk scoring band thresholds, and integration toggle flags. Each parameter has a key, a value, and an optional description. Changes take effect immediately without requiring a service restart.
+  </Accordion>
+  <Accordion title="Who can change settings">
+    Only users with the `settings:read` permission can view this page. Making changes requires `settings:write`. In practice, this page is restricted to the `SYSTEM_ADMINISTRATOR` role.
+  </Accordion>
+  <Accordion title="Audit trail">
+    Changes to system parameters are recorded in the `audit-log` entity, capturing the user, timestamp, and old and new values. Review the audit log if unexpected behaviour follows a parameter change.
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+  System parameter changes are applied immediately and affect all users. Test configuration changes in the UAT environment before applying them to production.
+</Warning>

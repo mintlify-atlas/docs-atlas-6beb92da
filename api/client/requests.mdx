@@ -1,0 +1,713 @@
+---
+title: "Funding, Withdrawal, and Portfolio Change Requests"
+description: "Client API request endpoints: funding deposits, fund withdrawals, portfolio change requests, and TR impersonation routes — all on port 3001."
+---
+
+Request endpoints cover all client-initiated operations that require backend approval or processing: depositing funds into an account, withdrawing cash or redeeming investments, and requesting a change to a portfolio's investment strategy. All endpoints require a valid JWT access token. Requests follow a lifecycle with statuses such as `PENDING`, `PENDING_APPROVAL`, `APPROVED`, `REJECTED`, and `PROCESSED`.
+
+<Note>
+Trading Representative (TR) users can initiate risk profile assessments and strategy changes on behalf of clients using the `/v1/tr/*` endpoints. These create requests that are pending the client's explicit confirmation before taking effect.
+</Note>
+
+---
+
+## Funding requests
+
+Funding requests represent a client's intent to deposit money into their robo account. Each request requires proof of transfer (a file upload).
+
+### POST /v1/funding-requests
+
+Submit a new funding deposit request. Accepts `multipart/form-data` because the proof-of-transfer file is uploaded in the same request.
+
+**Authentication**: JWT required
+
+```bash
+curl -X POST http://localhost:3001/v1/funding-requests \
+  -H "Authorization: Bearer <accessToken>" \
+  -F "accountId=ACC-00000001" \
+  -F "amount=10000" \
+  -F "currency=SGD" \
+  -F "proofOfTransfer=@/path/to/receipt.pdf"
+```
+
+#### Request body (multipart/form-data)
+
+<ParamField body="accountId" type="string" required>
+  The account ID to credit (e.g., `ACC-00000001`).
+</ParamField>
+
+<ParamField body="amount" type="number" required>
+  Deposit amount in the specified currency.
+</ParamField>
+
+<ParamField body="currency" type="string" default="SGD">
+  ISO 4217 currency code (e.g., `SGD`, `USD`).
+</ParamField>
+
+<ParamField body="proofOfTransfer" type="file" required>
+  Bank transfer receipt. Accepted formats: JPEG, PNG, PDF, HEIC. Maximum size: 10 MB.
+</ParamField>
+
+#### Response
+
+<ResponseField name="id" type="string" required>
+  Funding request ID (e.g., `FND-00000001`).
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+  Initial status of the request. Typically `PENDING`.
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Confirmation message.
+</ResponseField>
+
+#### Error responses
+
+| Status | Meaning |
+|--------|---------|
+| 400 | Missing required field or unsupported file type |
+| 403 | Account does not belong to the authenticated user |
+| 413 | File exceeds the 10 MB limit |
+
+---
+
+### GET /v1/funding-requests
+
+List funding requests submitted by the authenticated client. Supports filtering by account, status, and date range.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/funding-requests?status=PENDING&page=1&limit=20" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Query parameters
+
+<ParamField query="accountId" type="string">
+  Filter by account ID.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by request status (e.g., `PENDING`, `APPROVED`, `REJECTED`).
+</ParamField>
+
+<ParamField query="fromDate" type="string">
+  ISO 8601 start date for filtering by request date.
+</ParamField>
+
+<ParamField query="toDate" type="string">
+  ISO 8601 end date for filtering by request date.
+</ParamField>
+
+<ParamField query="page" type="number" default="1">
+  Page number for pagination.
+</ParamField>
+
+<ParamField query="limit" type="number" default="20">
+  Results per page.
+</ParamField>
+
+<ParamField query="sortBy" type="string">
+  Sort field (e.g., `requestDate`, `amount`).
+</ParamField>
+
+<ParamField query="sortOrder" type="string">
+  Sort direction: `ASC` or `DESC`.
+</ParamField>
+
+#### Response
+
+<ResponseField name="data" type="object[]" required>
+  Array of funding request summaries.
+  <Expandable title="funding request properties">
+    <ResponseField name="id" type="string">Request ID.</ResponseField>
+    <ResponseField name="accountId" type="string">Target account ID.</ResponseField>
+    <ResponseField name="accountName" type="string">Account display name.</ResponseField>
+    <ResponseField name="requesterId" type="string">User ID who submitted the request.</ResponseField>
+    <ResponseField name="requesterName" type="string">Requester display name.</ResponseField>
+    <ResponseField name="requestDate" type="string">ISO 8601 submission timestamp.</ResponseField>
+    <ResponseField name="status" type="string">Current request status.</ResponseField>
+    <ResponseField name="statusDisplayName" type="string">Human-readable status label.</ResponseField>
+    <ResponseField name="amount" type="number">Deposit amount.</ResponseField>
+    <ResponseField name="currency" type="string">Currency code.</ResponseField>
+    <ResponseField name="approverId" type="string">ID of the staff member who approved or rejected, may be null.</ResponseField>
+    <ResponseField name="approverName" type="string">Approver display name, may be null.</ResponseField>
+    <ResponseField name="approvedAt" type="string">ISO 8601 approval timestamp, may be null.</ResponseField>
+    <ResponseField name="rejectionReason" type="string">Rejection reason, may be null.</ResponseField>
+    <ResponseField name="expiresAt" type="string">Request expiry timestamp, may be null.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 creation timestamp.</ResponseField>
+    <ResponseField name="updatedAt" type="string">ISO 8601 last-updated timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="total" type="number" required>Total matching requests.</ResponseField>
+<ResponseField name="page" type="number" required>Current page.</ResponseField>
+<ResponseField name="limit" type="number" required>Page size.</ResponseField>
+<ResponseField name="totalPages" type="number" required>Total pages.</ResponseField>
+
+---
+
+### GET /v1/funding-requests/:id
+
+Retrieve the full details of a single funding request, including the attachment metadata.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/funding-requests/FND-00000001" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>
+  Funding request ID.
+</ParamField>
+
+#### Response
+
+Full funding request object including an `attachment` field:
+
+<ResponseField name="attachment" type="object">
+  Proof of transfer file metadata.
+  <Expandable title="attachment properties">
+    <ResponseField name="attachmentKey" type="string">Storage key used to retrieve the file.</ResponseField>
+    <ResponseField name="attachmentName" type="string">Original file name.</ResponseField>
+    <ResponseField name="attachmentType" type="string">MIME type (e.g., `application/pdf`).</ResponseField>
+    <ResponseField name="attachmentSize" type="number">File size in bytes.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+### GET /v1/funding-requests/:id/attachment
+
+Retrieve a time-limited presigned URL to download the proof-of-transfer attachment.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/funding-requests/FND-00000001/attachment" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>
+  Funding request ID.
+</ParamField>
+
+#### Response
+
+<ResponseField name="url" type="string" required>
+  Presigned download URL. Valid for the duration specified in `expiresIn`.
+</ResponseField>
+
+<ResponseField name="expiresIn" type="number" required>
+  URL validity in seconds (3600 = 1 hour).
+</ResponseField>
+
+---
+
+## Withdrawal requests
+
+Withdrawal requests cover three distinct operations: withdrawing cash to a bank account, cancelling an existing pending request, and redeeming an investment holding.
+
+### POST /v1/withdraw-requests/fund-withdrawal
+
+Submit a cash withdrawal request to transfer funds from the robo account to a designated bank account.
+
+**Authentication**: JWT required
+
+```bash
+curl -X POST http://localhost:3001/v1/withdraw-requests/fund-withdrawal \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accountId": "ACC-00000001",
+    "amount": 5000,
+    "currency": "SGD",
+    "bankAccountNumber": "9876543210",
+    "bankName": "OCBC Bank",
+    "bankCode": "7339",
+    "beneficiaryName": "John Doe",
+    "withdrawalMethod": "BANK_TRANSFER",
+    "purpose": "Personal use"
+  }'
+```
+
+#### Request body
+
+<ParamField body="accountId" type="string" required>Account ID to withdraw from.</ParamField>
+<ParamField body="amount" type="number" required>Withdrawal amount.</ParamField>
+<ParamField body="currency" type="string" required>ISO 4217 currency code.</ParamField>
+<ParamField body="bankAccountNumber" type="string" required>Destination bank account number.</ParamField>
+<ParamField body="bankName" type="string" required>Bank name.</ParamField>
+<ParamField body="bankCode" type="string" required>Bank clearing code.</ParamField>
+<ParamField body="beneficiaryName" type="string" required>Name on the bank account.</ParamField>
+<ParamField body="withdrawalMethod" type="string" required>Withdrawal method (e.g., `BANK_TRANSFER`).</ParamField>
+<ParamField body="purpose" type="string">Optional reason for the withdrawal.</ParamField>
+
+#### Response
+
+<ResponseField name="id" type="string" required>Withdrawal request ID.</ResponseField>
+<ResponseField name="status" type="string" required>Initial status (typically `PENDING`).</ResponseField>
+<ResponseField name="message" type="string" required>Confirmation message.</ResponseField>
+
+---
+
+### POST /v1/withdraw-requests/request-cancellation
+
+Cancel an existing pending withdraw request. Creates a cancellation sub-request linked to the original.
+
+**Authentication**: JWT required
+
+```bash
+curl -X POST http://localhost:3001/v1/withdraw-requests/request-cancellation \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accountId": "ACC-00000001",
+    "originalRequestId": "WDR-00000001",
+    "cancellationReason": "Changed my mind"
+  }'
+```
+
+#### Request body
+
+<ParamField body="accountId" type="string" required>Account ID associated with the original request.</ParamField>
+<ParamField body="originalRequestId" type="string" required>ID of the withdrawal request to cancel.</ParamField>
+<ParamField body="cancellationReason" type="string" required>Reason for the cancellation.</ParamField>
+
+---
+
+### POST /v1/withdraw-requests/investment-redemption
+
+Redeem an investment holding (fully or partially), converting units to cash in the account.
+
+**Authentication**: JWT required
+
+```bash
+curl -X POST http://localhost:3001/v1/withdraw-requests/investment-redemption \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accountId": "ACC-00000001",
+    "holdingId": "HLD-00000001",
+    "instrumentId": "INS-00000001",
+    "instrumentCode": "VAS",
+    "instrumentName": "VANGUARD AUST SHARES IDX ETF",
+    "quantity": 100,
+    "redemptionType": "FULL",
+    "settlementCurrency": "SGD",
+    "estimatedValue": 5000
+  }'
+```
+
+#### Request body
+
+<ParamField body="accountId" type="string" required>Account ID holding the investment.</ParamField>
+<ParamField body="holdingId" type="string">Holding record ID.</ParamField>
+<ParamField body="instrumentId" type="string">Instrument ID to redeem.</ParamField>
+<ParamField body="instrumentCode" type="string">Instrument ticker code.</ParamField>
+<ParamField body="instrumentName" type="string">Instrument display name.</ParamField>
+<ParamField body="quantity" type="number">Number of units to redeem.</ParamField>
+<ParamField body="redemptionType" type="string" required>Redemption type: `FULL` or `PARTIAL`.</ParamField>
+<ParamField body="settlementCurrency" type="string" required>ISO 4217 currency for the settlement proceeds.</ParamField>
+<ParamField body="estimatedValue" type="number">Estimated value of the units being redeemed.</ParamField>
+
+---
+
+### GET /v1/withdraw-requests
+
+List withdrawal requests submitted by the authenticated client.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/withdraw-requests?requestType=fund-withdrawal&page=1" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Query parameters
+
+<ParamField query="accountId" type="string">Filter by account ID.</ParamField>
+<ParamField query="requestType" type="string">Filter by type: `fund-withdrawal`, `request-cancellation`, or `investment-redemption`.</ParamField>
+<ParamField query="status" type="string">Filter by status.</ParamField>
+<ParamField query="fromDate" type="string">ISO 8601 start date.</ParamField>
+<ParamField query="toDate" type="string">ISO 8601 end date.</ParamField>
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="20">Results per page.</ParamField>
+<ParamField query="sortBy" type="string">Sort field.</ParamField>
+<ParamField query="sortOrder" type="string">Sort direction: `ASC` or `DESC`.</ParamField>
+
+---
+
+### GET /v1/withdraw-requests/:id
+
+Retrieve a single withdrawal request by ID.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/withdraw-requests/WDR-00000001" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>Withdrawal request ID.</ParamField>
+
+---
+
+### POST /v1/withdraw-requests/:id/submit
+
+Advance a draft withdrawal request to `PENDING_APPROVAL` status, submitting it for staff review.
+
+**Authentication**: JWT required
+
+```bash
+curl -X POST "http://localhost:3001/v1/withdraw-requests/WDR-00000001/submit" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>Withdrawal request ID.</ParamField>
+
+#### Response
+
+<ResponseField name="id" type="string" required>Request ID.</ResponseField>
+<ResponseField name="previousStatus" type="string" required>Status before the action.</ResponseField>
+<ResponseField name="currentStatus" type="string" required>Status after the action.</ResponseField>
+<ResponseField name="message" type="string" required>Confirmation message.</ResponseField>
+
+---
+
+### POST /v1/withdraw-requests/:id/cancel
+
+Cancel a pending withdrawal request. Only the request owner can cancel.
+
+**Authentication**: JWT required
+
+```bash
+curl -X POST "http://localhost:3001/v1/withdraw-requests/WDR-00000001/cancel" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>Withdrawal request ID to cancel.</ParamField>
+
+---
+
+## Portfolio change requests
+
+Portfolio change requests capture a client's intent to change their investment strategy. They can be self-initiated (client changes strategy directly) or TR-initiated (TR proposes a change, client must confirm).
+
+### POST /v1/portfolio-requests
+
+Create a portfolio change request. Requires the `portfolio-requests:create` permission.
+
+**Authentication**: JWT required (trader/staff role)
+
+```bash
+curl -X POST http://localhost:3001/v1/portfolio-requests \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targetUserId": "USR-00000001",
+    "accountId": "ACC-00000001",
+    "portfolioId": "PTF-00000001",
+    "suggestedPortfolioId": "PTF-00000002",
+    "reason": "Client requested lower risk exposure",
+    "answers": [
+      {"questionId": "QST-00000001", "answer": "capital_preservation"}
+    ]
+  }'
+```
+
+#### Request body
+
+<ParamField body="targetUserId" type="string" required>The client user ID this request is for.</ParamField>
+<ParamField body="accountId" type="string" required>Account ID to associate the request with.</ParamField>
+<ParamField body="portfolioId" type="string" required>Current portfolio ID.</ParamField>
+<ParamField body="suggestedPortfolioId" type="string">Suggested new portfolio template ID.</ParamField>
+<ParamField body="reason" type="string">Reason for the change request.</ParamField>
+<ParamField body="answers" type="object[]">Updated questionnaire answers submitted alongside the request.</ParamField>
+
+#### Response
+
+The created portfolio request object:
+
+<ResponseField name="id" type="string" required>Request ID.</ResponseField>
+<ResponseField name="status" type="string" required>Initial status.</ResponseField>
+<ResponseField name="requestType" type="string" required>Request type identifier.</ResponseField>
+<ResponseField name="initiatedBy" type="string" required>Role that initiated the request (`CLIENT` or `ADMIN`).</ResponseField>
+<ResponseField name="requesterId" type="string" required>User ID of the requester.</ResponseField>
+<ResponseField name="targetUserId" type="string" required>User ID of the target client.</ResponseField>
+<ResponseField name="createdAt" type="string" required>ISO 8601 timestamp.</ResponseField>
+
+---
+
+### GET /v1/portfolio-requests/my-requests
+
+List portfolio change requests for the authenticated user. Returns requests where the user is either the requester or the target client.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/portfolio-requests/my-requests?page=1&limit=20" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Query parameters
+
+<ParamField query="accountId" type="string">Filter by account ID.</ParamField>
+<ParamField query="requestType" type="string">Filter by request type.</ParamField>
+<ParamField query="status" type="string">Filter by status.</ParamField>
+<ParamField query="initiatedBy" type="string">Filter by initiator: `CLIENT` or `ADMIN`.</ParamField>
+<ParamField query="fromDate" type="string">ISO 8601 start date.</ParamField>
+<ParamField query="toDate" type="string">ISO 8601 end date.</ParamField>
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="20">Results per page.</ParamField>
+
+---
+
+### GET /v1/portfolio-requests/pending-confirmations
+
+Retrieve admin- or TR-initiated portfolio requests that are pending confirmation from the authenticated client.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/portfolio-requests/pending-confirmations" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Query parameters
+
+<ParamField query="userId" type="string">TR only. Client user ID to retrieve pending confirmations for.</ParamField>
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="20">Results per page.</ParamField>
+
+---
+
+### GET /v1/portfolio-requests/:id
+
+Retrieve a single portfolio change request by ID.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/portfolio-requests/REQ-00000001" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>Portfolio request ID.</ParamField>
+
+---
+
+### POST /v1/portfolio-requests/:id/confirm
+
+Confirm an admin- or TR-initiated portfolio change request. Upon confirmation, the request is automatically approved and portfolio assignment proceeds.
+
+**Authentication**: JWT required (client role)
+
+```bash
+curl -X POST "http://localhost:3001/v1/portfolio-requests/REQ-00000001/confirm" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>Portfolio request ID to confirm.</ParamField>
+
+#### Response
+
+The confirmed (and auto-approved) portfolio request object.
+
+---
+
+### POST /v1/portfolio-requests/:id/cancel
+
+Cancel a pending portfolio change request.
+
+**Authentication**: JWT required
+
+```bash
+curl -X POST "http://localhost:3001/v1/portfolio-requests/REQ-00000001/cancel" \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "No longer needed"}'
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>Portfolio request ID to cancel.</ParamField>
+
+#### Request body
+
+<ParamField body="reason" type="string">Cancellation reason.</ParamField>
+
+---
+
+### POST /v1/portfolio-requests/:id/decline
+
+Decline a TR-initiated portfolio change request. Only the target client can decline.
+
+**Authentication**: JWT required (client role)
+
+```bash
+curl -X POST "http://localhost:3001/v1/portfolio-requests/REQ-00000001/decline" \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "I prefer to keep my current strategy"}'
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>Portfolio request ID to decline.</ParamField>
+
+#### Request body
+
+<ParamField body="reason" type="string">Reason for declining the TR-initiated change.</ParamField>
+
+---
+
+## Trading Representative (TR) endpoints
+
+TR endpoints allow a Trading Representative to act on behalf of a client. Before calling these endpoints, the TR must have selected a client in the `ClientGate`. All TR endpoints require the authenticated user to have the `TradingRepresentative` role — other roles receive `403 Forbidden`.
+
+<Warning>
+TR-initiated requests (risk profile and strategy change) create portfolio requests with status `PENDING_CONFIRMATION`. The client must explicitly confirm via `POST /v1/portfolio-requests/:id/confirm` before the change is applied.
+</Warning>
+
+### GET /v1/tr/accounts
+
+List all client accounts managed by the authenticated Trading Representative.
+
+**Authentication**: JWT required (TradingRepresentative role only)
+
+```bash
+curl http://localhost:3001/v1/tr/accounts \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Response
+
+<ResponseField name="data" type="object[]" required>
+  Array of managed client accounts.
+  <Expandable title="account properties">
+    <ResponseField name="id" type="string">Account ID.</ResponseField>
+    <ResponseField name="name" type="string">Account name.</ResponseField>
+    <ResponseField name="userId" type="string">Client user ID linked to the account.</ResponseField>
+    <ResponseField name="clientName" type="string">Client display name.</ResponseField>
+    <ResponseField name="username" type="string">Client username.</ResponseField>
+    <ResponseField name="status" type="string">Account status.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Error responses
+
+| Status | Meaning |
+|--------|---------|
+| 403 | Authenticated user is not a Trading Representative |
+
+---
+
+### POST /v1/tr/risk-profile-requests
+
+Submit a completed risk profiling questionnaire on behalf of a client. The backend scores the answers, derives a risk level and recommended portfolio, then creates a portfolio request pending the client's confirmation.
+
+**Authentication**: JWT required (TradingRepresentative role only)
+
+```bash
+curl -X POST http://localhost:3001/v1/tr/risk-profile-requests \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targetUserId": "USR-00000001",
+    "answers": [
+      {"questionId": "QST-00000001", "answer": "capital_growth"},
+      {"questionId": "QST-00000002", "answer": "5_to_10_years"},
+      {"questionId": "QST-00000003", "answer": "moderate_risk"}
+    ]
+  }'
+```
+
+#### Request body
+
+<ParamField body="targetUserId" type="string" required>
+  The client user ID on whose behalf the questionnaire is being submitted. Must be a client the TR manages.
+</ParamField>
+
+<ParamField body="answers" type="object[]" required>
+  Array of question-answer pairs.
+  <Expandable title="answer properties">
+    <ParamField body="answers[].questionId" type="string" required>Question ID.</ParamField>
+    <ParamField body="answers[].answer" type="string" required>Selected answer value.</ParamField>
+  </Expandable>
+</ParamField>
+
+#### Response
+
+<ResponseField name="requestId" type="string" required>Created portfolio request ID (awaiting client confirmation).</ResponseField>
+<ResponseField name="submissionId" type="string" required>Questionnaire submission ID.</ResponseField>
+<ResponseField name="targetUserId" type="string" required>Client user ID.</ResponseField>
+<ResponseField name="suggestedRiskLevel" type="string" required>Computed risk level: `HIGH`, `MEDIUM`, or `LOW`.</ResponseField>
+<ResponseField name="riskProfileType" type="string" required>Risk profile classification label.</ResponseField>
+<ResponseField name="status" type="string" required>Request status. Will be `PENDING_CONFIRMATION`.</ResponseField>
+
+---
+
+### POST /v1/tr/strategy-change-requests
+
+Propose a portfolio strategy change for a client's existing portfolio. Creates a request pending the client's confirmation.
+
+**Authentication**: JWT required (TradingRepresentative role only)
+
+```bash
+curl -X POST http://localhost:3001/v1/tr/strategy-change-requests \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targetUserId": "USR-00000001",
+    "currentPortfolioId": "PTF-00000001",
+    "newRiskLevel": "low"
+  }'
+```
+
+#### Request body
+
+<ParamField body="targetUserId" type="string" required>
+  Client user ID whose portfolio strategy is being changed.
+</ParamField>
+
+<ParamField body="currentPortfolioId" type="string" required>
+  The ID of the client's existing portfolio to change.
+</ParamField>
+
+<ParamField body="newRiskLevel" type="string" required>
+  The proposed new risk level. One of: `high`, `medium`, `low`.
+</ParamField>
+
+#### Response
+
+<ResponseField name="requestId" type="string" required>Created portfolio request ID (awaiting client confirmation).</ResponseField>
+<ResponseField name="targetUserId" type="string" required>Client user ID.</ResponseField>
+<ResponseField name="currentRiskLevel" type="string" required>The client's current portfolio risk level.</ResponseField>
+<ResponseField name="suggestedRiskLevel" type="string" required>The proposed new risk level.</ResponseField>
+<ResponseField name="status" type="string" required>Request status. Will be `PENDING_CONFIRMATION`.</ResponseField>
+
+#### Error responses
+
+| Status | Meaning |
+|--------|---------|
+| 403 | Authenticated user is not a Trading Representative |
+| 400 | Invalid `newRiskLevel` value (must be `high`, `medium`, or `low`) |
+| 404 | Portfolio or client not found |

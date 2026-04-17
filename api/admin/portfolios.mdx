@@ -1,0 +1,467 @@
+---
+title: 'Admin API — Portfolios & Instruments'
+description: 'Endpoints for portfolios, portfolio templates, risk questionnaires, client risk profiles, and financial instruments in the UTRADE Robo Admin API.'
+---
+
+This page documents the investment portfolio management surface of the Admin API. It covers four related domains: **portfolios** (individual investment accounts), **portfolio templates** (model allocations), **questionnaires and risk profiles** (client risk-scoring), and **instruments** (the underlying securities). All endpoints require `Authorization: Bearer <accessToken>`.
+
+**Base URL (development):** `http://localhost:3002`
+
+---
+
+## Portfolios
+
+A portfolio represents a single investment allocation for a user. One user may have multiple portfolios, but only one is marked `isPrimary = true` at any time. Portfolios transition through the status lifecycle: `draft → active → rebalancing → closed`.
+
+### GET /v1/portfolios
+
+List all user portfolios (admin view) with pagination and filters.
+
+<Note>
+Requires `portfolios:read` permission.
+</Note>
+
+#### Query parameters
+
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="20">Records per page.</ParamField>
+<ParamField query="sortBy" type="string" default="createdAt">Sort column.</ParamField>
+<ParamField query="sortOrder" type="string" default="DESC">Sort direction: `ASC` or `DESC`.</ParamField>
+<ParamField query="search" type="string">Search by portfolio name or user name.</ParamField>
+<ParamField query="riskLevel" type="string">Filter by risk level: `low`, `medium`, or `high`.</ParamField>
+<ParamField query="companyId" type="string">Filter by company ID.</ParamField>
+<ParamField query="status" type="string">Filter by status: `draft`, `active`, `rebalancing`, or `closed`.</ParamField>
+<ParamField query="userId" type="string">Filter by user ID.</ParamField>
+
+#### Response
+
+<ResponseField name="data" type="array" required>
+  Array of portfolio objects.
+  <Expandable title="portfolio object">
+    <ResponseField name="id" type="string">Portfolio ID (e.g. `PTF-00000001`).</ResponseField>
+    <ResponseField name="name" type="string">Portfolio name, nullable.</ResponseField>
+    <ResponseField name="description" type="string">Description, nullable.</ResponseField>
+    <ResponseField name="riskLevel" type="string">Risk level: `low`, `medium`, or `high`.</ResponseField>
+    <ResponseField name="companyId" type="string">Owning company ID.</ResponseField>
+    <ResponseField name="userName" type="string">Display name of the linked user.</ResponseField>
+    <ResponseField name="userId" type="string">Linked user ID.</ResponseField>
+    <ResponseField name="status" type="string">Portfolio status.</ResponseField>
+    <ResponseField name="isPrimary" type="boolean">Whether this is the user's primary portfolio.</ResponseField>
+    <ResponseField name="details" type="array">Asset allocation details (present on single-portfolio responses).</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 creation timestamp.</ResponseField>
+    <ResponseField name="updatedAt" type="string">ISO 8601 last-updated timestamp, nullable.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="total" type="number">Total matching records.</ResponseField>
+<ResponseField name="page" type="number">Current page.</ResponseField>
+<ResponseField name="limit" type="number">Records per page.</ResponseField>
+<ResponseField name="totalPages" type="number">Total pages.</ResponseField>
+
+```bash cURL
+curl "http://localhost:3002/v1/portfolios?status=active&riskLevel=medium&page=1&limit=20" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### GET /v1/portfolios/:id
+
+Retrieve a single portfolio including its full asset allocation `details` array.
+
+Admin users (those with `portfolios:read`) can access any portfolio. Non-admin users can only access their own.
+
+<ParamField path="id" type="string" required>Portfolio ID (e.g. `PTF-00000001`).</ParamField>
+
+```bash cURL
+curl http://localhost:3002/v1/portfolios/PTF-00000001 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**200 OK — example response**
+
+```json
+{
+  "id": "PTF-00000001",
+  "name": "My Growth Portfolio",
+  "description": "Long-term capital growth",
+  "riskLevel": "medium",
+  "companyId": "COM-00000001",
+  "userName": "John Doe",
+  "userId": "USR-00000005",
+  "status": "active",
+  "isPrimary": true,
+  "details": [
+    { "instrumentId": "INS-00000001", "instrumentName": "MSCI World ETF", "weightage": 60 },
+    { "instrumentId": "INS-00000002", "instrumentName": "SGD Bond Fund", "weightage": 40 }
+  ],
+  "createdAt": "2024-01-15T10:00:00.000Z",
+  "updatedAt": "2024-01-20T08:30:00.000Z"
+}
+```
+
+**Common error responses**
+
+| Status | Description |
+|--------|-------------|
+| `404 Not Found` | No portfolio with the given ID. |
+| `403 Forbidden` | Non-admin user attempting to access another user's portfolio. |
+
+---
+
+### PATCH /v1/portfolios/:id
+
+Update a portfolio's name, description, risk level, status, or primary flag.
+
+<Note>
+Admin users (with `portfolios:update` permission) can update any portfolio. Regular users can only update their own.
+</Note>
+
+<ParamField path="id" type="string" required>Portfolio ID.</ParamField>
+
+#### Request body
+
+<ParamField body="name" type="string">New name. Maximum 255 characters.</ParamField>
+<ParamField body="description" type="string">New description. Maximum 500 characters.</ParamField>
+<ParamField body="riskLevel" type="string">New risk level: `low`, `medium`, or `high`.</ParamField>
+<ParamField body="status" type="string">New status: `draft`, `active`, `rebalancing`, or `closed`.</ParamField>
+<ParamField body="isPrimary" type="boolean">Set as the user's primary portfolio.</ParamField>
+
+```bash cURL
+curl -X PATCH http://localhost:3002/v1/portfolios/PTF-00000001 \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Balanced Growth Portfolio",
+    "riskLevel": "medium",
+    "status": "active"
+  }'
+```
+
+---
+
+## Portfolio Templates
+
+Portfolio templates are model allocations maintained by administrators. They define the target instrument weightings for a given risk level and serve as the blueprint assigned to client portfolios.
+
+### GET /v1/portfolio-templates
+
+List portfolio templates with pagination and optional filters.
+
+<Note>
+Requires `portfolio-templates:read` permission.
+</Note>
+
+#### Query parameters
+
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="10">Records per page.</ParamField>
+<ParamField query="companyId" type="string">Filter by company ID.</ParamField>
+<ParamField query="riskLevel" type="string">Filter by risk level: `low`, `medium`, or `high`.</ParamField>
+<ParamField query="search" type="string">Search by template name.</ParamField>
+<ParamField query="orderBy" type="string">Sort column.</ParamField>
+<ParamField query="order" type="string" default="DESC">Sort direction.</ParamField>
+
+```bash cURL
+curl "http://localhost:3002/v1/portfolio-templates?riskLevel=low&page=1" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**200 OK — example response**
+
+```json
+{
+  "data": [
+    {
+      "id": "TPL-00000001",
+      "name": "Conservative Portfolio",
+      "description": "Capital preservation focus",
+      "riskLevel": "low",
+      "companyId": "COM-00000001",
+      "details": [
+        { "instrumentId": "INS-00000002", "instrumentName": "SGD Bond Fund", "weightage": 80 },
+        { "instrumentId": "INS-00000003", "instrumentName": "Money Market Fund", "weightage": 20 }
+      ],
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": null
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "limit": 10,
+  "totalPages": 1
+}
+```
+
+---
+
+### GET /v1/portfolio-templates/:id
+
+Retrieve a single portfolio template with its full `details` allocation list.
+
+<ParamField path="id" type="string" required>Template ID (e.g. `TPL-00000001`).</ParamField>
+
+```bash cURL
+curl http://localhost:3002/v1/portfolio-templates/TPL-00000001 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**Common error responses**
+
+| Status | Description |
+|--------|-------------|
+| `404 Not Found` | Template not found. |
+
+---
+
+## Questionnaires
+
+Questionnaires capture client risk profiles through a series of scored questions. The Admin API provides management endpoints for the question bank and read access to all client submissions.
+
+### GET /v1/questionnaires/:questionGoal/submissions
+
+List all client submissions for a given questionnaire goal.
+
+<Note>
+Requires `questionnaires:read` permission.
+</Note>
+
+#### Path parameters
+
+<ParamField path="questionGoal" type="string" required>
+  The questionnaire goal identifier (e.g. `RISK_PROFILE`).
+</ParamField>
+
+#### Query parameters
+
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="10">Records per page.</ParamField>
+
+```bash cURL
+curl "http://localhost:3002/v1/questionnaires/RISK_PROFILE/submissions?page=1&limit=20" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### POST /v1/questions
+
+Create a new question in the question bank.
+
+<Note>
+Requires `questionnaires:manage` permission.
+</Note>
+
+#### Request body
+
+<ParamField body="companyId" type="string" required>Company this question belongs to.</ParamField>
+<ParamField body="name" type="string" required>Internal identifier name for the question.</ParamField>
+<ParamField body="displayName" type="string" required>Question text shown to the client.</ParamField>
+<ParamField body="page" type="number" required>Page number in the questionnaire flow.</ParamField>
+<ParamField body="sequence" type="number" required>Display order within the page.</ParamField>
+<ParamField body="questionDetail" type="string" required>Additional detail or help text.</ParamField>
+<ParamField body="answerType" type="string" required>Input type (e.g. `single_choice`, `multi_choice`, `scale`).</ParamField>
+<ParamField body="description" type="string">Optional description.</ParamField>
+<ParamField body="questionNum" type="string">Question number label (e.g. `Q1`).</ParamField>
+<ParamField body="answerOptions" type="array">Array of answer option objects with labels and scores.</ParamField>
+<ParamField body="parentId" type="string">Parent question ID for conditional questions.</ParamField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/questions \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "companyId": "COM-00000001",
+    "name": "investment_horizon",
+    "displayName": "What is your investment horizon?",
+    "page": 1,
+    "sequence": 1,
+    "questionDetail": "How long do you plan to keep your money invested?",
+    "answerType": "single_choice",
+    "questionNum": "Q1",
+    "answerOptions": [
+      { "label": "Less than 1 year", "score": 1 },
+      { "label": "1-3 years", "score": 2 },
+      { "label": "More than 3 years", "score": 3 }
+    ]
+  }'
+```
+
+---
+
+## Client Risk Profiles
+
+### GET /v1/clients/:clientId/risk-profile
+
+Retrieve the latest risk profile submission for a client, including score breakdown, answers, and the linked portfolio.
+
+<Note>
+Requires `questionnaires:read` permission with `branch` scope.
+</Note>
+
+#### Path parameters
+
+<ParamField path="clientId" type="string" required>Client user ID (e.g. `USR-00000005`).</ParamField>
+
+#### Query parameters
+
+<ParamField query="accountId" type="string">Optional account ID to filter the risk profile by a specific account.</ParamField>
+
+```bash cURL
+curl "http://localhost:3002/v1/clients/USR-00000005/risk-profile?accountId=ACC-00000001" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### PATCH /v1/clients/:clientId/risk-profile
+
+Admin override of a client's risk profile. Updates the submission as overridden and adjusts the linked portfolio's risk level to match.
+
+<Note>
+Requires `questionnaires:manage` permission.
+</Note>
+
+<ParamField path="clientId" type="string" required>Client user ID.</ParamField>
+
+#### Request body
+
+<ParamField body="newRiskProfileType" type="string" required>
+  New risk profile classification (e.g. `CONSERVATIVE`, `BALANCED`, `AGGRESSIVE`).
+</ParamField>
+
+<ParamField body="reason" type="string" required>
+  Justification for the override. Stored in the audit trail.
+</ParamField>
+
+```bash cURL
+curl -X PATCH http://localhost:3002/v1/clients/USR-00000005/risk-profile \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "newRiskProfileType": "CONSERVATIVE",
+    "reason": "Client requested downgrade after life event"
+  }'
+```
+
+**200 OK — example response**
+
+```json
+{
+  "submissionId": "550e8400-e29b-41d4-a716-446655440000",
+  "userId": "USR-00000005",
+  "riskProfileType": "CONSERVATIVE",
+  "riskLevel": "low",
+  "isOverridden": true,
+  "portfolioId": "PTF-00000001"
+}
+```
+
+**Common error responses**
+
+| Status | Description |
+|--------|-------------|
+| `404 Not Found` | No risk profile submission found for this client. |
+
+---
+
+## Instruments
+
+Financial instruments (equities, ETFs, bonds, etc.) used in portfolio allocations.
+
+### GET /v1/instruments
+
+List instruments with pagination, filters, and sorting.
+
+<Note>
+Requires `instruments:read` permission.
+</Note>
+
+#### Query parameters
+
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="10">Records per page.</ParamField>
+<ParamField query="search" type="string">Search by short name, name, ticker, or ISIN.</ParamField>
+<ParamField query="assetClass" type="string">Filter by asset class (e.g. `equity`, `bond`, `etf`).</ParamField>
+<ParamField query="market" type="string">Filter by market (e.g. `SGX`, `NYSE`).</ParamField>
+<ParamField query="status" type="string">Filter by status (e.g. `active`, `inactive`).</ParamField>
+<ParamField query="orderBy" type="string">Sort column.</ParamField>
+<ParamField query="order" type="string" default="DESC">Sort direction.</ParamField>
+
+#### Response
+
+<ResponseField name="data" type="array" required>
+  Array of instrument objects.
+  <Expandable title="instrument object">
+    <ResponseField name="id" type="string">Instrument ID (e.g. `INS-00000001`).</ResponseField>
+    <ResponseField name="shortName" type="string">Ticker-style short name (e.g. `AAPL`).</ResponseField>
+    <ResponseField name="name" type="string">Full instrument name (e.g. `Apple Inc.`).</ResponseField>
+    <ResponseField name="ticker" type="string">Exchange ticker, nullable.</ResponseField>
+    <ResponseField name="isin" type="string">ISIN code, nullable.</ResponseField>
+    <ResponseField name="currency" type="string">Trading currency (ISO 4217), nullable.</ResponseField>
+    <ResponseField name="size" type="number">Lot size, nullable.</ResponseField>
+    <ResponseField name="expiryDate" type="string">Expiry date for structured products, nullable.</ResponseField>
+    <ResponseField name="assetClass" type="string">Asset class, nullable.</ResponseField>
+    <ResponseField name="market" type="string">Market/exchange, nullable.</ResponseField>
+    <ResponseField name="productClass" type="string">Product class, nullable.</ResponseField>
+    <ResponseField name="productType" type="string">Product type, nullable.</ResponseField>
+    <ResponseField name="sector" type="string">Sector, nullable.</ResponseField>
+    <ResponseField name="riskLevel" type="string">Risk level, nullable.</ResponseField>
+    <ResponseField name="status" type="string">Status (e.g. `active`), nullable.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 creation timestamp.</ResponseField>
+    <ResponseField name="updatedAt" type="string">ISO 8601 last-updated timestamp, nullable.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="total" type="number">Total matching records.</ResponseField>
+<ResponseField name="page" type="number">Current page.</ResponseField>
+<ResponseField name="limit" type="number">Records per page.</ResponseField>
+<ResponseField name="totalPages" type="number">Total pages.</ResponseField>
+
+```bash cURL
+curl "http://localhost:3002/v1/instruments?assetClass=etf&market=SGX&page=1" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### GET /v1/instruments/:id
+
+Retrieve a single instrument by ID.
+
+<ParamField path="id" type="string" required>Instrument ID (e.g. `INS-00000001`).</ParamField>
+
+```bash cURL
+curl http://localhost:3002/v1/instruments/INS-00000001 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**200 OK — example response**
+
+```json
+{
+  "id": "INS-00000001",
+  "shortName": "IWDA",
+  "name": "iShares Core MSCI World UCITS ETF",
+  "ticker": "IWDA",
+  "isin": "IE00B4L5Y983",
+  "currency": "USD",
+  "size": 1,
+  "expiryDate": null,
+  "assetClass": "etf",
+  "market": "LSE",
+  "productClass": "passive",
+  "productType": "etf",
+  "sector": "global",
+  "riskLevel": "medium",
+  "status": "active",
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": null
+}
+```
+
+**Common error responses**
+
+| Status | Description |
+|--------|-------------|
+| `404 Not Found` | Instrument not found. |

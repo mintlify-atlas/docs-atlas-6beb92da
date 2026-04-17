@@ -1,0 +1,175 @@
+---
+title: "System Architecture and Technology Stack"
+description: "Five-repository layout, technology stack, Clean Architecture + CQRS backend patterns, React frontend feature modules, and the schema ownership model."
+---
+
+The platform comprises two NestJS backend APIs, two React SPAs, and a shared infrastructure layer (PostgreSQL, Keycloak, Redis). Both backends share the same architectural patterns — Clean Architecture layered over CQRS — and both frontends share the same feature-module layout. The database schema is owned exclusively by `ms-robo-admin`.
+
+## High-level architecture
+
+```
+                    ┌─────────────────────────────────────────────────┐
+                    │                   Clients                       │
+                    └───────────┬─────────────────┬───────────────────┘
+                                │                 │
+                    ┌───────────▼──────┐ ┌────────▼──────────┐
+                    │  mfe-robo-admin  │ │   mfe-robo-web    │
+                    │  (Admin UI)      │ │   (Client UI)     │
+                    │  Port 5173       │ │   Port 5174       │
+                    │  React 19 + Vite │ │   React 19 + Vite │
+                    └───────────┬──────┘ └────────┬──────────┘
+                                │                 │
+                    ┌───────────▼──────┐ ┌────────▼──────────┐
+                    │  ms-robo-admin   │ │   ms-robo-web     │
+                    │  (Admin API)     │ │   (Client API)    │
+                    │  Port 3002       │ │   Port 3001       │
+                    │  NestJS + CQRS   │ │   NestJS + CQRS   │
+                    └──┬────┬────┬─────┘ └──┬────┬────┬──────┘
+                       │    │    │           │    │    │
+              ┌────────▼┐ ┌─▼──┐ ┌──────────▼┐ ┌▼────▼────────┐
+              │PostgreSQL│ │Redis│ │ Keycloak  │ │ FNZ/Tapico   │
+              │Port 5433 │ │6379 │ │ Port 8080 │ │ Trading API  │
+              └──────────┘ └────┘ └───────────┘ └──────────────┘
+                                        │
+                              ┌─────────▼─────────┐
+                              │  SUS8 Redshift     │
+                              │  (User Datalake)   │
+                              └────────────────────┘
+```
+
+## Repository reference
+
+| Repository | Type | Version | Port | Role |
+|---|---|---|---|---|
+| `ms-robo-admin` | NestJS backend | 1.9.4 | 3002 | Admin API — **sole schema owner**; hosts all TypeORM entities, migrations (13 total), and seeds |
+| `ms-robo-web` | NestJS backend | 1.10.1 | 3001 | Client API — schema consumer; entities are a synced copy from `ms-robo-admin` |
+| `mfe-robo-admin` | React frontend | 1.4.5 | 5173 | Admin dashboard; communicates with `ms-robo-admin` at port 3002 |
+| `mfe-robo-web` | React frontend | 1.5.2 | 5174 | Client portal; communicates with `ms-robo-web` at port 3001 |
+| `ms-robo-dataloader` | Placeholder | — | — | Reserved for future data loading; no active code |
+
+## Technology stack
+
+| Layer | Technology |
+|---|---|
+| **Backend runtime** | NestJS 11, TypeORM 0.3.25, Node.js 22 |
+| **Database** | PostgreSQL 17 (Alpine), database name `uob_portal` |
+| **Backend pattern** | CQRS via `@nestjs/cqrs`, Clean Architecture |
+| **Frontend** | React 19, Vite 7, Tailwind CSS 4, HeroUI v3, Zustand 5, TanStack Query 5 |
+| **Forms** | React Hook Form + Zod |
+| **HTTP client** | Axios (singleton `apiManager` per frontend) |
+| **Auth** | JWT + Keycloak OIDC (PKCE), Passport.js |
+| **Package manager** | Bun (≥1.0.0) for all services |
+| **Infrastructure** | Docker Compose (local), Kubernetes / OpenShift (UAT + prod), Istio service mesh |
+| **Quality** | SonarQube, ESLint, Prettier, Jest / Vitest, Playwright |
+| **Trading integration** | FNZ/Tapico API (mock mode available) |
+| **Data sync** | AWS Redshift Serverless — SUS8 datalake |
+| **Logging** | Pino + nestjs-pino |
+| **Testing (backend)** | Jest 30 with `@swc/jest` (admin) / `ts-jest` (web) |
+| **Testing (frontend)** | Vitest 4, Testing Library, MSW |
+
+## Backend architecture — Clean Architecture + CQRS
+
+Both `ms-robo-admin` and `ms-robo-web` follow the same folder layout:
+
+```
+src/
+├── core/
+│   ├── domain/{context}/         # Entities, value objects, domain errors
+│   └── application/{context}/    # Commands, queries, handlers, ports (interfaces)
+├── infrastructure/
+│   ├── persistence/              # TypeORM entities, repositories, migrations, mappers
+│   ├── external/                 # Adapters: Keycloak, FNZ/Tapico, SUS8 Redshift, JWT
+│   ├── adapters/                 # Other infrastructure adapters
+│   ├── config/                   # Config modules per integration
+│   └── logger/                   # Pino
+├── presentation/
+│   ├── http/{context}/           # Controllers, DTOs, guards, decorators
+│   └── modules/                  # NestJS feature modules (DI wiring)
+├── shared/                       # Symbol tokens, shared DTOs, utils
+└── types/
+```
+
+**Data flow for a request:**
+
+1. Controller (`presentation/http/<domain>/`) dispatches via `CommandBus.execute()` or `QueryBus.execute()`
+2. Command or Query is a plain DTO in `core/application/<domain>/commands/` or `queries/`
+3. Handler contains business logic and injects port interfaces via Symbol tokens
+4. Ports (`core/application/<domain>/ports/`) are abstract classes — infrastructure adapters implement them
+5. Adapters in `infrastructure/` are wired to ports in the feature module's `providers`
+
+**Path aliases** (TypeScript + Jest): `@core/*`, `@infrastructure/*`, `@persistence/*` (resolves to `infrastructure/persistence`), `@presentation/*`, `@shared/*`, `@test/*`. Never use deep relative paths.
+
+**Dependency injection** uses Symbol tokens, not class references:
+
+```typescript
+export const USER_REPOSITORY = Symbol('USER_REPOSITORY');
+// In the feature module:
+{ provide: USER_REPOSITORY, useExisting: UserRepositoryAdapter }
+```
+
+**Global guards** applied in `AppModule`:
+- `JwtAuthGuard` — validates JWT on all endpoints; use `@Public()` to opt out
+- `AdminOnlyGuard` — blocks the `User` role from the admin API (clients must use `ms-robo-web`)
+- `DomainExceptionFilter` — maps `DomainException` / `ApplicationException` to HTTP status codes
+
+**`ms-robo-admin` domain contexts** (13): `identity`, `authorization`, `account`, `client`, `portfolio`, `portfolio-request`, `portfolio-template`, `questionnaire`, `funding-request`, `withdraw-request`, `trading`, `instrument`, `user-sync`.
+
+## Frontend architecture — feature modules
+
+Both `mfe-robo-admin` and `mfe-robo-web` use the same feature-module layout:
+
+```
+src/
+├── App.tsx              # Route table — all routes defined here
+├── main.tsx
+├── core/                # Shared: apiManager (Axios + token refresh), auth store, layouts, shared components
+├── features/{name}/     # One folder per product feature
+│   ├── apis/            # API service functions (Axios calls)
+│   ├── hooks/           # TanStack Query queries and mutations
+│   ├── components/      # Feature-specific React components
+│   ├── pages/           # Page-level components
+│   └── types/           # TypeScript interfaces
+├── constants/           # Routes, status colors, menu config
+└── styles/
+```
+
+State management is split by concern:
+
+| Concern | Approach |
+|---|---|
+| Server state | TanStack Query hooks under `features/*/hooks/` |
+| UI / client state | Zustand stores under `core/auth/` or feature-local stores |
+| Forms | React Hook Form + Zod schemas |
+
+The two frontends do not share code at the file level. Copy components explicitly if needed and document the copy.
+
+**Token storage** uses localStorage prefixes to keep the portals isolated on the same domain:
+
+| Portal | Access token key | Refresh token key |
+|---|---|---|
+| Admin UI | `admin-accessToken` | `admin-refreshToken` |
+| Client UI | `portal-accessToken` | `portal-refreshToken` |
+
+## Schema ownership model
+
+<Warning>
+`ms-robo-admin` is the **sole owner** of the database schema. `ms-robo-web` is a schema consumer — its `entities/` directory is a synced copy and must never be hand-edited, and it must never generate migrations.
+</Warning>
+
+```
+ms-robo-admin (schema owner)           ms-robo-web (consumer)
+├── entities/  (source of truth)  ───► ├── entities/  (synced copy, read-only)
+├── migrations/  (13 migrations)        ├── (no migrations directory)
+├── seeds/                              └── repositories/
+└── repositories/
+```
+
+To propagate a schema change:
+
+1. Edit the entity in `ms-robo-admin/src/infrastructure/persistence/entities/`
+2. Run `bun run db:generate` in `ms-robo-admin` to create the migration
+3. Run `bun run db:migrate` to apply it against the local database
+4. Run `bun run db:sync` to push updated entity files to `ms-robo-web`
+5. Verify with `bun run db:sync:check`
+
+If entity drift appears in `ms-robo-web`, always run `db:sync:check` first — never patch `ms-robo-web` entities directly.

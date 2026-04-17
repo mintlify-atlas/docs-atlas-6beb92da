@@ -1,0 +1,121 @@
+---
+title: "Funding Deposits and Withdrawal Requests"
+description: "Submit funding deposits and withdrawal requests from the client portal. Covers required fields, status workflow, approval timelines, and password management."
+---
+
+The **Requests** page at `/request/withdraw` is where you manage all money movements in and out of your portfolio. You can submit a new funding deposit or a withdrawal request, and track the status of any requests you have previously submitted. Both types of request go through an approval workflow — nothing is processed automatically.
+
+## Funding requests (deposits)
+
+A funding request tells the platform you want to deposit money into your portfolio. You submit the request with the deposit details, and the back-office team reviews it before the funds are recorded as available.
+
+### What you need to provide
+
+- **Deposit amount** — the amount you intend to transfer, in the applicable currency
+- **Proof of transfer** — you can attach a supporting document (such as a bank transfer receipt) to your request. Files must be under 5 MB.
+
+### How to submit a funding request
+
+<Steps>
+  <Step title="Open the Requests page">
+    Navigate to `/request/withdraw` from the sidebar. This page shows both your funding and withdrawal history.
+  </Step>
+  <Step title="Start a new funding request">
+    Click **New Funding Request** to open the submission form.
+  </Step>
+  <Step title="Enter the deposit amount">
+    Enter the amount you are depositing. Verify the currency matches what you are actually transferring.
+  </Step>
+  <Step title="Attach proof of transfer">
+    Upload a copy of your bank receipt or transfer confirmation. This helps the back-office team verify the deposit quickly.
+  </Step>
+  <Step title="Submit the request">
+    Review the details and click **Submit**. Your request is immediately logged with **Submitted** status and sent to the admin team for review.
+  </Step>
+</Steps>
+
+## Withdrawal requests
+
+A withdrawal request tells the platform you want to take funds out of your portfolio. The system checks that your requested amount does not exceed your available account balance before submitting. If it does, the request will be rejected at submission.
+
+<Warning>
+You cannot request a withdrawal amount greater than your available account balance. The platform validates your balance when you submit the request.
+</Warning>
+
+### What you need to provide
+
+- **Withdrawal amount** — the amount you want to withdraw
+- **Destination bank details** — your bank information must be up to date in your [account profile](/client/portfolio-dashboard) before submitting a withdrawal. If your bank details are missing or outdated, update them at `/profile` first.
+
+### How to submit a withdrawal request
+
+<Steps>
+  <Step title="Open the Requests page">
+    Navigate to `/request/withdraw` from the sidebar.
+  </Step>
+  <Step title="Start a new withdrawal request">
+    Click **New Withdrawal Request** to open the submission form.
+  </Step>
+  <Step title="Enter the withdrawal amount">
+    Enter the amount you want to withdraw. The form will validate that this does not exceed your available balance.
+  </Step>
+  <Step title="Confirm your bank details">
+    Review the bank information on file. If it is incorrect, go to your profile page to update it before proceeding.
+  </Step>
+  <Step title="Submit the request">
+    Click **Submit**. The request is logged with **Submitted** status and sent to the admin team for review.
+  </Step>
+</Steps>
+
+## Request status workflow
+
+Every request — whether a deposit or a withdrawal — moves through the same set of statuses:
+
+| Status | Meaning |
+|---|---|
+| **Submitted** | Your request has been received and is waiting for admin review |
+| **Pending Approval** | The admin team is actively reviewing the request |
+| **Approved** | The request has been approved and is being processed |
+| **Rejected** | The admin team has rejected the request |
+
+You can see the current status of each request on the Requests page. Approved requests are reflected in your account balance and portfolio valuation after processing. Rejected requests are closed with no changes to your balance.
+
+<Note>
+A **Pending Approval** banner also appears on your [portfolio dashboard](/client/portfolio-dashboard) whenever you have an open request awaiting review.
+</Note>
+
+## Approval timelines and notifications
+
+The back-office team reviews requests during business hours. There is no fixed SLA, but you will receive a notification in the portal once a decision is made. If a request has been pending for an extended period, contact your Trading Representative or the support team for an update.
+
+## Password management
+
+You can update your login password at `/settings/change_password`. Enter your current password, then set and confirm a new one. Password changes take effect immediately — you will need to use your new password the next time you log in.
+
+<Tip>
+If you use SSO (Single Sign-On) to log in via Keycloak, your password is managed through your organisation's identity provider, not through the portal. The change password page only applies to username/password accounts.
+</Tip>
+
+## Frequently asked questions
+
+<AccordionGroup>
+  <Accordion title="Can I cancel a request after submitting it?">
+    Once a request has been submitted, you cannot cancel it directly from the portal. Contact the back-office team or your Trading Representative to request cancellation before the request is approved.
+  </Accordion>
+
+  <Accordion title="What file formats are accepted for proof of transfer?">
+    Common document formats such as PDF, JPG, and PNG are accepted. Files must not exceed 5 MB. If you are unable to upload your document, contact the support team for assistance.
+  </Accordion>
+
+  <Accordion title="Why was my withdrawal rejected?">
+    Withdrawals may be rejected if the requested amount exceeds your available balance, if your bank details are missing or incorrect, or if the back-office team requires additional documentation. The rejection reason is noted on the request. Update your details and resubmit if needed.
+  </Accordion>
+
+  <Accordion title="How do I know when my deposit has been approved?">
+    You will receive a notification in the portal when the back-office team approves your funding request. The approved amount will then be reflected in your account balance on the dashboard.
+  </Accordion>
+
+  <Accordion title="Can my Trading Representative submit requests on my behalf?">
+    Your Trading Representative can view your request history and assist you in preparing a request, but funding and withdrawal submissions are typically initiated by you. If you need help, speak to your TR directly.
+  </Accordion>
+</AccordionGroup>

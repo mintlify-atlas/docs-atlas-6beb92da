@@ -1,0 +1,218 @@
+---
+title: "Local Development Setup for UTRADE Robo"
+description: "Run the UTRADE Robo platform locally: start Docker services, install dependencies, run migrations, and access all five services with test credentials."
+---
+
+The platform requires three infrastructure services (PostgreSQL, Keycloak, SonarQube) running in Docker, plus up to four application services started from their individual repository directories. All backend commands use **Bun** as the package manager. Both frontends require **Node ≥ 22.16.x** but also use Bun for dependency installation.
+
+<Note>
+This workspace is a multi-repo setup — there is no root `package.json`. Every command must be run from inside the relevant service folder.
+</Note>
+
+## Prerequisites
+
+- Docker and Docker Compose installed and running
+- Bun ≥ 1.0.0 (`curl -fsSL https://bun.sh/install | bash`)
+- Node.js ≥ 22.16.x (required by the two React frontends)
+
+## Step 1 — Start infrastructure services
+
+<Steps>
+  <Step title="Start Docker Compose">
+    Start PostgreSQL, Keycloak, and SonarQube. Confirm the correct compose file path with your team — the spec file at `documents/01-project-overview.md §7.1` is the canonical reference.
+
+    ```bash
+    docker compose -f <path-to-compose-file> up -d
+    ```
+
+    The three services that must be running:
+
+    | Service | Image | Host port | Purpose |
+    |---|---|---|---|
+    | PostgreSQL | `postgres:17.5-alpine` | 5433 | Shared database (`uob_portal`) |
+    | Keycloak | `quay.io/keycloak/keycloak:26.2` | 8080 | SSO identity provider |
+    | SonarQube | `sonarqube:lts-community` | 9100 | Code quality analysis |
+  </Step>
+
+  <Step title="Verify services are healthy">
+    Confirm all three containers are running before proceeding:
+
+    ```bash
+    docker compose ps
+    ```
+
+    PostgreSQL should be accepting connections on `localhost:5433`. Keycloak's admin console should be reachable at `http://localhost:8080`.
+  </Step>
+</Steps>
+
+## Step 2 — Run database migrations
+
+<Warning>
+Only `ms-robo-admin` owns the schema. Run all migration commands from the `ms-robo-admin` directory. Never run migration commands in `ms-robo-web`.
+</Warning>
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    cd ms-robo-admin
+    bun install
+    ```
+  </Step>
+
+  <Step title="Run pending migrations">
+    ```bash
+    bun run db:migrate
+    ```
+
+    This applies all 13 pending TypeORM migrations against the `uob_portal` database on port 5433.
+  </Step>
+
+  <Step title="Seed the database (optional)">
+    ```bash
+    bun run seed:run
+    ```
+  </Step>
+
+  <Step title="Sync entities to ms-robo-web">
+    After migrations, push the updated entity files to the consumer service:
+
+    ```bash
+    bun run db:sync
+    ```
+
+    Verify the sync is clean:
+
+    ```bash
+    bun run db:sync:check
+    ```
+  </Step>
+</Steps>
+
+### Additional migration commands
+
+| Command | Description |
+|---|---|
+| `bun run db:generate` | Generate a new migration from entity diff |
+| `bun run db:create` | Create an empty migration file |
+| `bun run db:revert` | Revert the last applied migration |
+| `bun run schema:drop` | Drop all tables — **destructive, use with caution** |
+
+## Step 3 — Start backend services
+
+Run each backend from its own directory. Both use the same commands.
+
+<Tabs>
+  <Tab title="ms-robo-admin (port 3002)">
+    ```bash
+    cd ms-robo-admin
+    bun install
+    bun run start:dev
+    ```
+
+    The Admin API starts in watch mode at `http://localhost:3002`. Swagger docs are available at `http://localhost:3002/docs`.
+  </Tab>
+  <Tab title="ms-robo-web (port 3001)">
+    ```bash
+    cd ms-robo-web
+    bun install
+    bun run start:dev
+    ```
+
+    The Client API starts in watch mode at `http://localhost:3001`. Swagger docs are available at `http://localhost:3001/docs`.
+  </Tab>
+</Tabs>
+
+## Step 4 — Start frontend services
+
+Both frontends use Bun for installation and Vite for the dev server.
+
+<Tabs>
+  <Tab title="mfe-robo-admin (port 5173)">
+    ```bash
+    cd mfe-robo-admin
+    bun install
+    bun run dev
+    ```
+
+    The Admin UI starts at `http://localhost:5173`. Connects to the Admin API at `http://localhost:3002`.
+  </Tab>
+  <Tab title="mfe-robo-web (port 5174)">
+    ```bash
+    cd mfe-robo-web
+    bun install
+    bun run dev
+    ```
+
+    The Client UI starts at `http://localhost:5174`. Connects to the Client API at `http://localhost:3001`.
+  </Tab>
+</Tabs>
+
+## Local access URLs
+
+| Service | URL | Notes |
+|---|---|---|
+| Admin API | `http://localhost:3002` | NestJS — `ms-robo-admin` |
+| Admin API Swagger | `http://localhost:3002/docs` | Interactive API documentation |
+| Client API | `http://localhost:3001` | NestJS — `ms-robo-web` |
+| Client API Swagger | `http://localhost:3001/docs` | Interactive API documentation |
+| Admin UI | `http://localhost:5173` | React — `mfe-robo-admin` |
+| Client UI | `http://localhost:5174` | React — `mfe-robo-web` |
+| Keycloak admin console | `http://localhost:8080` | SSO identity provider |
+| SonarQube | `http://localhost:9100` | Code quality dashboard |
+| PostgreSQL | `localhost:5433` | Database `uob_portal`, mapped from container port 5432 |
+
+## Keycloak test users
+
+The following test accounts are pre-configured in the local Keycloak realm:
+
+| Username | Password | Role |
+|---|---|---|
+| `admin` | `Admin@123` | System Administrator |
+| `testuser` | `User@123` | Client / User |
+| `trader` | `Trader@123` | Trading Representative |
+| `backoffice` | `BackOffice@123` | Back Office / PM |
+| `staff` | `Staff@123` | Staff |
+
+<Note>
+These credentials are for local development only. The Keycloak admin console at `http://localhost:8080` lets you create additional test accounts or inspect realm configuration.
+</Note>
+
+## Common development commands
+
+<AccordionGroup>
+  <Accordion title="Backend commands (ms-robo-admin and ms-robo-web)">
+    ```bash
+    bun run build          # Compile to dist/
+    bun run start:prod     # Run compiled production build
+    bun run lint           # ESLint
+    bun run format         # Prettier
+    bun run test           # Jest unit tests
+    bun run test:cov       # Jest with coverage report
+    bun run test:e2e       # E2E tests (spins up docker-compose.e2e.yaml)
+    ```
+  </Accordion>
+
+  <Accordion title="Frontend commands (mfe-robo-admin and mfe-robo-web)">
+    ```bash
+    bun run build          # Vite production build (mfe-robo-web also runs tsc first)
+    bun run typecheck      # tsc --noEmit
+    bun run lint           # ESLint
+    bun run lint:fix       # ESLint with auto-fix
+    bun run format         # Prettier
+    bun run test           # Vitest single pass
+    bun run test:watch     # Vitest watch mode
+    bun run test:ui        # Vitest UI
+    bun run knip           # Detect unused exports and files
+    ```
+  </Accordion>
+
+  <Accordion title="SonarQube analysis">
+    Run from within a service directory. Use `sonar:local` to target the local SonarQube instance on port 9100:
+
+    ```bash
+    bun run sonar:local
+    ```
+
+    This runs the SonarScanner CLI in Docker, mounting the current directory and pointing at `http://host.docker.internal:9100`.
+  </Accordion>
+</AccordionGroup>

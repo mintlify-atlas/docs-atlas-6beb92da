@@ -1,0 +1,119 @@
+---
+title: "Portfolio Management: Templates, Portfolios, and Instruments"
+description: "Manage model portfolio templates by risk level, review and update client portfolios, maintain the financial instrument catalogue, and generate holdings reports."
+---
+
+Portfolio management in the admin portal spans the full investment stack: defining the model portfolios that drive automated allocation, reviewing the portfolios assigned to clients, and maintaining the instruments and questionnaires that underpin the risk profiling workflow. Each page in this section is gated by its own permission code, so access can be granted selectively by role.
+
+## Portfolio templates
+
+Portfolio templates at `/portfolio-templates` define the model portfolios that the platform recommends to clients based on their risk level. Each template specifies a risk level, a name, and a list of instrument weightings that together sum to 100%.
+
+<Tabs>
+  <Tab title="Viewing templates">
+    The template list shows each template's name, risk level, company, and last updated date. Filter by risk level or search by name. Click a row to open the template detail, which displays the full instrument breakdown with asset class, market, and weightage for each line.
+  </Tab>
+  <Tab title="Creating a template">
+    <Steps>
+      <Step title="Open the new template form">
+        Click **New template**. Fill in the template name, optional description, and risk level.
+      </Step>
+      <Step title="Add instrument lines">
+        For each instrument in the portfolio, provide the instrument ID, asset class, market, and weightage. Add as many lines as needed. The sum of all weightage values must equal 100.
+      </Step>
+      <Step title="Save">
+        Submit the form. The template is created under the current company ID (`COM-00000001`) and becomes available for portfolio assignment.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Editing a template">
+    Open an existing template and click **Edit**. You can update the name, description, risk level, and the instrument lines. Saving overwrites the existing template definition. Changes do not retroactively alter client portfolios already assigned to this template.
+  </Tab>
+</Tabs>
+
+<Note>
+  Viewing portfolio templates requires the `portfolio-templates:read` permission.
+</Note>
+
+## User portfolios
+
+The user portfolios page at `/user-portfolios` shows all portfolios that have been created for platform clients. Each portfolio is linked to a user (not directly to an account — see the schema note below) and carries a risk level, status, and a flag indicating whether it is the user's primary portfolio.
+
+### Filtering and search
+
+Use the filter bar to narrow the portfolio list by:
+- **Risk level** — e.g. conservative, balanced, growth
+- **Status** — pending, active, suspended
+- **User** — search by user ID or username
+- **Company** — filter by company ID
+
+### Portfolio detail
+
+Clicking a portfolio opens the detail view showing:
+- Portfolio name, description, risk level, and status
+- Whether the portfolio is marked as primary (`isPrimary`)
+- The instrument line breakdown inherited from the assigned template
+- The linked username and user ID
+
+Authorised users can update the portfolio name, description, or risk level from this view.
+
+<Note>
+  Portfolio records are linked to `user_id` in the database, not to `account_id`. This is a known divergence from earlier platform specifications. One user may have multiple portfolios, but only one can have `isPrimary = true`.
+</Note>
+
+## Financial instruments
+
+The instrument catalogue at `/instruments` lists all securities and funds available on the platform. Each instrument record includes:
+
+| Field | Description |
+|---|---|
+| Short name | Abbreviated identifier used in portfolio lines |
+| Full name | Display name |
+| Ticker | Exchange ticker symbol (nullable) |
+| ISIN | International Securities Identification Number (nullable) |
+| Asset class | Equity, bond, fund, etc. |
+| Market | Exchange or market the instrument trades on |
+
+The instruments list supports search and pagination. Instrument records are also used as the reference data for portfolio template lines.
+
+<Note>
+  The instruments page requires the `instruments:read` permission.
+</Note>
+
+## Holdings overview
+
+The holdings page at `/holdings` shows current position data across all client accounts. Each row represents a holding in a specific account, with quantity, current price, and valuation. Holdings are loaded from the `account-holding` entity and reflect the most recent data imported or synced from the trading platform.
+
+<Note>
+  Holdings data is read-only in the admin portal. Updates come through the import pipeline at `/import` (type `holdings`) or via the FNZ/Tapico trading integration.
+</Note>
+
+## Reports
+
+The reports page at `/reports` provides export-ready views of platform data. Reports are generated on demand and can be exported to Excel using the built-in ExcelJS export capability.
+
+Available report types cover holdings summaries, portfolio valuations, and account movement history. Select the date range and filters for the report you need, then click **Export** to download the file.
+
+<Note>
+  Generating reports requires the `reports:read` permission.
+</Note>
+
+## Questionnaires
+
+The questionnaires page at `/questionnaires` manages the risk profiling questions shown to clients. Each question has a set of answers, optional display conditions (`question-condition`), and a scoring weight used to calculate the client's risk profile score.
+
+<AccordionGroup>
+  <Accordion title="Managing questions">
+    The question list shows all active questions with their display order and scoring configuration. You can create new questions, edit existing ones, or deactivate questions that are no longer relevant. Changes take effect immediately for new questionnaire submissions.
+  </Accordion>
+  <Accordion title="Viewing submissions">
+    Each completed questionnaire submission from a client is recorded as a `question-submission` with the answers and the resulting risk profile score. Submissions are linked to the client's portfolio request workflow — a submission ID is stored on the portfolio request to trace which risk assessment drove the strategy recommendation.
+  </Accordion>
+  <Accordion title="Risk profile scoring">
+    Answers are weighted by score. The sum of selected answer scores maps to a risk level (e.g. conservative, balanced, growth) according to the platform's scoring bands. The risk level determined by the questionnaire is used as the `suggestedRiskLevel` on the resulting portfolio request.
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  The questionnaires page requires the `questionnaires:read` permission.
+</Note>

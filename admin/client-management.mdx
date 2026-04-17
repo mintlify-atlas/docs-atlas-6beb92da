@@ -1,0 +1,93 @@
+---
+title: "Client Management: Accounts, Groups, and Imports"
+description: "Search and manage clients, view linked accounts and contacts, organise accounts into groups, map TR codes, and import batch data through the admin portal."
+---
+
+The client management section of the admin portal covers the full lifecycle of a client record: finding and viewing clients, inspecting their linked accounts, organising accounts into groups, and loading bulk data through the import tool. All pages in this section require the `clients:read` permission at minimum; write operations require the corresponding `clients:write` or `account-groups:write` permission on the acting user's role.
+
+## Client list
+
+Navigate to `/clients` to see the full client directory. The page opens with a paginated table showing each client's name, short name, NRIC, status, and creation date. Use the filter bar to narrow results:
+
+- **Search** — matches against client name, short name, or NRIC
+- **Status** — filter by active or inactive
+- **Sort** — click any column header to sort ascending or descending
+
+Pagination controls appear at the bottom of the table. The default page size is 20 records.
+
+## Client detail
+
+Click a row in the client list to open the client detail view. The detail page shows:
+
+- **Profile** — full name, short name, NRIC, gender, date of birth, and current status
+- **Accounts** — a list of all `ClientAccount` records linked to this client, including account name, account group, and account status
+- **Contacts** — associated contact records (phone, email, address) stored in the `contact` entity
+
+From the detail view, authorised users can edit client profile fields or change client status.
+
+## Account groups
+
+Account groups are used to categorise accounts for reporting, fee structures, and trading configuration. Navigate to `/account-groups` to manage them.
+
+<Steps>
+  <Step title="View existing groups">
+    The account groups list shows each group's name, description, and creation date. Use the search bar to filter by name.
+  </Step>
+  <Step title="Create a group">
+    Click **New account group**. Enter a name (required) and an optional description, then save. The new group is immediately available for assignment.
+  </Step>
+  <Step title="Edit or delete a group">
+    Open a group to edit its name or description. Deleting a group is only possible when no accounts are currently assigned to it.
+  </Step>
+  <Step title="View group members">
+    Inside a group record, the **Members** tab lists all accounts currently assigned, with each account's name, status, and linked client ID.
+  </Step>
+</Steps>
+
+### TR code relationships
+
+TR codes link accounts and clients to a trading representative. The relationship hierarchy is:
+
+```
+Company → Branch → Agent → TR Code → Account / Client
+```
+
+A single TR code can be associated with multiple accounts (`tr-code-account`) and multiple clients (`tr-code-client`). These associations are managed through the organisation settings at `/organization` rather than from the client detail page directly.
+
+## Batch data import
+
+The import tool at `/import` allows back office staff to load data from CSV files in bulk. Eight import types are supported:
+
+| Import type | What it loads |
+|---|---|
+| `client` | Client profile records |
+| `account` | Account records |
+| `instrument` | Financial instrument data |
+| `holdings` | Account holding positions |
+| `exchange-rate` | Currency exchange rates |
+| `agent` | Agent records |
+| `settlement` | Account settlement records |
+| `movement` | Account movement records |
+
+<Steps>
+  <Step title="Select import type">
+    Choose the data type from the dropdown. The expected CSV column format depends on the type selected.
+  </Step>
+  <Step title="Upload the file">
+    Click **Upload** and select a CSV file from your local machine. The file name is recorded against the import batch record.
+  </Step>
+  <Step title="Monitor progress">
+    After submission, the import batch appears in the history table with a status of `PENDING`, then `PROCESSING`. Refresh or wait for the status to update to `COMPLETED` or `FAILED`.
+  </Step>
+  <Step title="Review results">
+    Open a completed batch to see the detail breakdown: total records, successfully imported records, and failed records. For each failed row, the row number and error message are shown so corrections can be made before re-importing.
+  </Step>
+</Steps>
+
+<Warning>
+  Import operations are not reversible through the UI. Verify the CSV format and data quality before submitting a batch, particularly for `account` and `client` imports that affect live client records.
+</Warning>
+
+<Note>
+  The import page requires the `import:read` permission. Submitting a new batch requires `import:write` on the user's role.
+</Note>

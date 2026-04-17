@@ -1,0 +1,81 @@
+---
+title: "Admin Portal Overview: Features and Access Levels"
+description: "Admin Portal feature map: 17 routes, required permissions per route, five role definitions, and authentication details for back office staff."
+---
+
+The UTRADE Robo Admin Portal (`mfe-robo-admin`) is the back office interface for UOB Kay Hian staff. It connects to the admin API (`ms-robo-admin`, port 3002) and gives authorised users full visibility into client accounts, portfolio activity, approval queues, and system settings. Access to each section is gated by a specific permission code — the sidebar only shows menu items that the authenticated user's role permits.
+
+## Dashboard
+
+After login, the dashboard at `/dashboard` shows platform-wide metrics: total clients, total portfolios, and the number of pending approvals. Pending funding, withdrawal, and portfolio requests are surfaced here so back office staff can act on them without navigating to each approval queue individually.
+
+## Feature areas
+
+The portal is organised into 16 feature modules, each protected by a distinct permission.
+
+| Route | Purpose | Required permission |
+|---|---|---|
+| `/dashboard` | Metrics and pending approvals summary | Authenticated |
+| `/clients` | Client list, detail, and accounts | `clients:read` |
+| `/account-groups` | Account group management | `account-groups:read` |
+| `/portfolio-templates` | Model portfolio template management | `portfolio-templates:read` |
+| `/user-portfolios` | Client portfolio list and detail | `portfolios:read` |
+| `/instruments` | Financial instrument catalogue | `instruments:read` |
+| `/portfolio-requests` | Portfolio strategy change approvals | `portfolio-requests:read` |
+| `/withdrawal-requests` | Withdrawal request approvals | `withdraw-requests:read` |
+| `/funding-requests` | Funding deposit approvals | `funding-requests:read` |
+| `/questionnaires` | Risk questionnaire management | `questionnaires:read` |
+| `/holdings` | Holdings overview across accounts | `holdings:read` |
+| `/import` | Batch data import | `import:read` |
+| `/reports` | Report generation and export | `reports:read` |
+| `/user-management` | Admin user CRUD | `users:read` |
+| `/roles` | Role and permission management | `roles:read` |
+| `/organization` | Company, branch, agent, and TR code settings | `settings:read` |
+| `/system-settings` | System parameter configuration | `settings:read` |
+
+## Roles
+
+Five roles are defined in the platform. Each role carries a set of permissions that determines which menu items and actions are available.
+
+<AccordionGroup>
+  <Accordion title="SYSTEM_ADMINISTRATOR">
+    Full platform access. Can access all 16 feature areas, manage users and roles, configure organisation settings, and approve or reject any request type. Maps to the `admin` superuser in Keycloak with wildcard permission `*:*`.
+  </Accordion>
+  <Accordion title="BACK_OFFICE_USER">
+    Portfolio management and approvals focus. Can access client management, portfolio templates, user portfolios, all three approval queues (portfolio, withdrawal, and funding requests), holdings, and reports. Cannot manage system settings or create admin users.
+  </Accordion>
+  <Accordion title="STAFF">
+    Limited admin operations. Can view clients, accounts, and holdings but has no write access to approval workflows or system configuration.
+  </Accordion>
+  <Accordion title="TRADING_REPRESENTATIVE">
+    Client-facing operations. Manages client risk profiles and submits strategy change requests on behalf of clients via `/v1/tr/risk-profile-requests` and `/v1/tr/strategy-change-requests`. Does not have access to the back office approval queues.
+  </Accordion>
+  <Accordion title="USER">
+    Client self-service role. Used by the client portal (`mfe-robo-web`), not the admin portal. Listed here for completeness; users with this role cannot log in to the admin portal.
+  </Accordion>
+</AccordionGroup>
+
+## Navigation and layout
+
+The portal uses a persistent sidebar that renders only the menu items permitted for the current user's role. The header shows the logged-in username and a logout control. All list views use a shared `DataTable` component with column sorting, pagination, and a `FilterBar` for search and status filtering.
+
+## Authentication
+
+The admin portal uses username and password login only — there is no SSO option on this interface. Tokens are stored in `localStorage` under the `admin-` prefix (`admin-accessToken`, `admin-refreshToken`) to avoid collisions with the client portal. Sessions are automatically refreshed on 401 responses.
+
+## Further reading
+
+<CardGroup cols={2}>
+  <Card title="Client management" href="/admin/client-management">
+    Managing clients, accounts, account groups, and batch imports.
+  </Card>
+  <Card title="Portfolio management" href="/admin/portfolio-management">
+    Portfolio templates, user portfolios, instruments, holdings, and reports.
+  </Card>
+  <Card title="Request approvals" href="/admin/request-approvals">
+    Approval workflows for funding, withdrawal, and portfolio requests.
+  </Card>
+  <Card title="User management" href="/admin/user-management">
+    Admin users, roles, organisation structure, and system settings.
+  </Card>
+</CardGroup>

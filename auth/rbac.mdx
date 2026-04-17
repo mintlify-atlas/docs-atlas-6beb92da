@@ -1,0 +1,136 @@
+---
+title: "Role-Based Access Control: Roles, Permissions, Scopes"
+description: "Five platform roles, resource:action permission codes, four-level scope hierarchy, and the permission required for each admin portal route."
+---
+
+Every authenticated user carries a role. Each role grants a set of permissions in `resource:action` format. Permissions are further filtered by scope — a `portfolios:read` permission at the `branch` scope lets you read portfolios belonging to your branch, while the same permission at `global` scope lets you read all portfolios on the platform. The backend enforces these checks through the `JwtAuthGuard` (applied globally) and the `@RequirePermission` decorator on individual endpoints.
+
+## Roles
+
+The platform defines five roles:
+
+| Role key | Display name | Description |
+|---|---|---|
+| `SYSTEM_ADMINISTRATOR` | System Administrator | Full platform access across all resources and scopes. |
+| `BACK_OFFICE_USER` | Back Office / PM | Portfolio management, approval workflows, and reporting. |
+| `STAFF` | Staff | Limited admin operations. Read access to most resources. |
+| `TRADING_REPRESENTATIVE` | Trading Representative | Client impersonation, risk profile and strategy change requests on behalf of clients. |
+| `USER` | Client / User | Self-service access to own portfolio, requests, and profile. |
+
+<Note>
+Role assignment is managed through the admin portal's User Management section (`/user-management`) and requires the `users:read` permission to access. Only `SYSTEM_ADMINISTRATOR` can assign or revoke roles.
+</Note>
+
+## Permission format
+
+Permissions follow the `resource:action` pattern:
+
+```
+clients:read
+portfolios:read
+portfolio-requests:read
+funding-requests:read
+withdraw-requests:read
+questionnaires:read
+holdings:read
+instruments:read
+import:read
+reports:read
+users:read
+roles:read
+settings:read
+account-groups:read
+portfolio-templates:read
+```
+
+The `action` component is typically `read`, `write`, `approve`, or `delete` depending on the resource. Permissions are checked at the route level in the admin portal and at the endpoint level in the backend.
+
+## Permission scope hierarchy
+
+A permission can be granted at one of four scopes. Broader scopes subsume narrower ones:
+
+```
+global  >  company  >  branch  >  own
+```
+
+| Scope | Accessible data |
+|---|---|
+| `global` | All records across all companies |
+| `company` | All records within the authenticated user's company |
+| `branch` | All records within the authenticated user's branch |
+| `own` | Only records owned by or directly associated with the authenticated user |
+
+For example, a `TRADING_REPRESENTATIVE` with `portfolios:read` at `own` scope can read only the portfolios of clients assigned to them. A `BACK_OFFICE_USER` with `portfolios:read` at `company` scope can read all portfolios across their company.
+
+## Backend guards
+
+The backend applies three layers of access control:
+
+| Guard / decorator | Where applied | Behavior |
+|---|---|---|
+| `JwtAuthGuard` | Global (all routes) | Rejects requests without a valid JWT. Use `@Public()` to opt out. |
+| `@Roles(RoleEnum.X)` | Controller or handler | Restricts the endpoint to users with a specific role. |
+| `@RequirePermission('resource:action')` | Controller or handler | Requires the user to hold the named permission (scope is evaluated server-side). |
+
+Endpoints decorated with `@Public()` do not require authentication. The login endpoints (`/v1/auth/login`, `/v1/auth/sso/callback`) are public.
+
+## Admin portal route permissions
+
+The admin portal (`mfe-robo-admin`) guards each route with a required permission. Users without the permission are redirected or see the route hidden from the sidebar.
+
+| Route | Required permission |
+|---|---|
+| `/dashboard` | Authenticated (any role) |
+| `/clients` | `clients:read` |
+| `/account-groups` | `account-groups:read` |
+| `/portfolio-templates` | `portfolio-templates:read` |
+| `/user-portfolios` | `portfolios:read` |
+| `/instruments` | `instruments:read` |
+| `/portfolio-requests` | `portfolio-requests:read` |
+| `/withdrawal-requests` | `withdraw-requests:read` |
+| `/funding-requests` | `funding-requests:read` |
+| `/questionnaires` | `questionnaires:read` |
+| `/holdings` | `holdings:read` |
+| `/import` | `import:read` |
+| `/reports` | `reports:read` |
+| `/user-management` | `users:read` |
+| `/roles` | `roles:read` |
+| `/organization` | `settings:read` |
+| `/system-settings` | `settings:read` |
+
+## Permission checks in API requests
+
+Use the current user's permissions to determine which API calls to make or which UI elements to show. The authenticated user object returned from `/v1/auth/login` and `/v1/auth/me` includes a `roleId` field. You can compare it against the role keys above or call `/v1/roles` to retrieve the full permission list for a role.
+
+```typescript
+// Example: show the approve button only if the user has portfolio-requests:read
+const canApprove = user.role === 'BACK_OFFICE_USER' || user.role === 'SYSTEM_ADMINISTRATOR';
+```
+
+For fine-grained checks, retrieve the role's permissions from the API:
+
+```bash
+curl https://api.example.com/v1/roles \
+  -H "Authorization: Bearer <your-access-token>"
+```
+
+## Role capabilities summary
+
+<CardGroup cols={2}>
+  <Card title="SYSTEM_ADMINISTRATOR" icon="shield">
+    Full access to all routes and API endpoints. Can manage users, assign roles, modify system settings, and approve any request.
+  </Card>
+  <Card title="BACK_OFFICE_USER" icon="briefcase">
+    Can read and approve portfolio requests, funding requests, and withdrawal requests. Has company-scope read access to portfolios and client records.
+  </Card>
+  <Card title="STAFF" icon="user">
+    Read-only access to most admin resources. Cannot approve requests or modify user roles.
+  </Card>
+  <Card title="TRADING_REPRESENTATIVE" icon="trending-up">
+    Can access the client portal as a TR. Must select a client via the ClientGate before accessing features. Can submit risk profile and strategy change requests on the client's behalf.
+  </Card>
+</CardGroup>
+
+<Note>
+The `USER` (client) role applies only to the client portal (`mfe-robo-web`). Client users cannot access the admin portal. Their `own`-scoped permissions cover their own portfolio, funding requests, withdrawal requests, and profile.
+</Note>

@@ -1,0 +1,261 @@
+---
+title: 'Admin API — Authentication'
+description: 'Login, token refresh, logout, and current user endpoints for the UTRADE Robo Admin API. All session management goes through these four routes.'
+---
+
+The Admin API uses JWT-based session management. On a successful login the server returns a short-lived access token and a longer-lived refresh token. Pass the access token as `Authorization: Bearer <token>` on every subsequent request. Refresh tokens are accepted only by the `/v1/auth/refresh` endpoint.
+
+<Note>
+`POST /v1/auth/login` and `POST /v1/auth/refresh` are the only auth endpoints marked `@Public` — they do not require a valid JWT in the request.
+</Note>
+
+**Base URL (development):** `http://localhost:3002`
+
+---
+
+## POST /v1/auth/login
+
+Authenticate with a username and password. Returns an access token, refresh token, and the full user profile including role and permissions.
+
+<Note>
+This endpoint is public — no `Authorization` header is required.
+</Note>
+
+### Request body
+
+<ParamField body="username" type="string" required>
+  The user's login username. Minimum 3 characters. Transformed to lowercase and trimmed before lookup.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The user's password. Minimum 6 characters.
+</ParamField>
+
+### Response
+
+<ResponseField name="token" type="string" required>
+  Short-lived JWT access token. Include in `Authorization: Bearer` headers.
+</ResponseField>
+
+<ResponseField name="refreshToken" type="string" required>
+  Long-lived refresh token. Use with `POST /v1/auth/refresh` to obtain a new access token.
+</ResponseField>
+
+<ResponseField name="tokenExpires" type="number" required>
+  Unix timestamp (milliseconds) at which the access token expires.
+</ResponseField>
+
+<ResponseField name="user" type="object" required>
+  The authenticated user's profile.
+  <Expandable title="user properties">
+    <ResponseField name="id" type="string">User ID (e.g. `USR-00000001`).</ResponseField>
+    <ResponseField name="username" type="string">Login username.</ResponseField>
+    <ResponseField name="roleId" type="string">Assigned role ID.</ResponseField>
+    <ResponseField name="firstName" type="string">First name, nullable.</ResponseField>
+    <ResponseField name="lastName" type="string">Last name, nullable.</ResponseField>
+    <ResponseField name="companyId" type="string">Company the user belongs to.</ResponseField>
+    <ResponseField name="contactId" type="string">Linked contact ID, nullable.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 creation timestamp.</ResponseField>
+    <ResponseField name="updatedAt" type="string">ISO 8601 last-updated timestamp.</ResponseField>
+    <ResponseField name="role" type="object">
+      Role details.
+      <Expandable title="role properties">
+        <ResponseField name="id" type="string">Role ID.</ResponseField>
+        <ResponseField name="name" type="string">Internal role name (e.g. `SystemAdministrator`).</ResponseField>
+        <ResponseField name="displayName" type="string">Human-readable role label.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="permissions" type="array">
+      Flat list of permission codes assigned to this user's role.
+      <Expandable title="permission item">
+        <ResponseField name="code" type="string">Permission code (e.g. `portfolios:read`).</ResponseField>
+        <ResponseField name="scope" type="string">Scope level: `global`, `company`, `branch`, or `own`.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="agent" type="object">Linked agent record, nullable (populated for TR users).</ResponseField>
+    <ResponseField name="client" type="object">Linked client record, nullable (populated for client-role users).</ResponseField>
+    <ResponseField name="account" type="object">Linked account record, nullable.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "admin",
+    "password": "password123"
+  }'
+```
+
+**200 OK — example response**
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "tokenExpires": 1710000000000,
+  "user": {
+    "id": "USR-00000001",
+    "username": "admin",
+    "roleId": "ROLE-00000001",
+    "firstName": "System",
+    "lastName": "Admin",
+    "companyId": "COM-00000001",
+    "contactId": null,
+    "createdAt": "2024-01-15T10:00:00.000Z",
+    "updatedAt": "2024-01-15T10:00:00.000Z",
+    "role": {
+      "id": "ROLE-00000001",
+      "name": "SystemAdministrator",
+      "displayName": "System Administrator"
+    },
+    "permissions": [
+      { "code": "users:manage", "scope": "global" },
+      { "code": "portfolios:read", "scope": "global" }
+    ],
+    "agent": null,
+    "client": null,
+    "account": null
+  }
+}
+```
+
+**Common error responses**
+
+| Status | Description |
+|--------|-------------|
+| `401 Unauthorized` | Invalid username or password. |
+| `400 Bad Request` | Validation failed (e.g. password too short). |
+
+---
+
+## POST /v1/auth/refresh
+
+Exchange a valid refresh token for a new access token and refresh token pair. The old refresh token is invalidated after use.
+
+<Note>
+Send the refresh token in the `Authorization: Bearer` header. This endpoint uses the `jwt-refresh` Passport strategy rather than the standard JWT strategy.
+</Note>
+
+### Request
+
+No request body. The refresh token must be supplied as `Authorization: Bearer <refreshToken>`.
+
+### Response
+
+<ResponseField name="token" type="string" required>New access token.</ResponseField>
+<ResponseField name="refreshToken" type="string" required>New refresh token. The previous one is now invalid.</ResponseField>
+<ResponseField name="tokenExpires" type="number" required>Unix timestamp (milliseconds) when the new access token expires.</ResponseField>
+<ResponseField name="user" type="object" required>Full user profile — same shape as the login response.</ResponseField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/auth/refresh \
+  -H "Authorization: Bearer <refreshToken>"
+```
+
+**200 OK — example response**
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "tokenExpires": 1710003600000,
+  "user": { "id": "USR-00000001", "username": "admin" }
+}
+```
+
+**Common error responses**
+
+| Status | Description |
+|--------|-------------|
+| `401 Unauthorized` | Refresh token is invalid, expired, or already used. |
+
+---
+
+## POST /v1/auth/logout
+
+Invalidate the current session. The server soft-deletes the session record identified by the session ID embedded in the access token. Subsequent requests using the same access token will be rejected.
+
+### Request
+
+No request body. Authenticate with `Authorization: Bearer <accessToken>`.
+
+### Response
+
+`204 No Content` on success. No body is returned.
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/auth/logout \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**Common error responses**
+
+| Status | Description |
+|--------|-------------|
+| `401 Unauthorized` | Missing or invalid access token. |
+
+---
+
+## GET /v1/auth/me
+
+Return the full profile of the currently authenticated user, including role and permissions. The response shape is identical to the `user` object returned by login and refresh.
+
+### Request
+
+No request body. Authenticate with `Authorization: Bearer <accessToken>`.
+
+### Response
+
+<ResponseField name="id" type="string">User ID.</ResponseField>
+<ResponseField name="username" type="string">Login username.</ResponseField>
+<ResponseField name="roleId" type="string">Assigned role ID.</ResponseField>
+<ResponseField name="firstName" type="string">First name, nullable.</ResponseField>
+<ResponseField name="lastName" type="string">Last name, nullable.</ResponseField>
+<ResponseField name="companyId" type="string">Company ID.</ResponseField>
+<ResponseField name="contactId" type="string">Contact ID, nullable.</ResponseField>
+<ResponseField name="createdAt" type="string">ISO 8601 creation timestamp.</ResponseField>
+<ResponseField name="updatedAt" type="string">ISO 8601 last-updated timestamp.</ResponseField>
+<ResponseField name="role" type="object">Role object with `id`, `name`, `displayName`.</ResponseField>
+<ResponseField name="permissions" type="array">List of `{ code, scope }` permission objects.</ResponseField>
+<ResponseField name="agent" type="object">Agent record, nullable (TR users).</ResponseField>
+<ResponseField name="client" type="object">Client record, nullable.</ResponseField>
+<ResponseField name="account" type="object">Account record, nullable.</ResponseField>
+
+```bash cURL
+curl http://localhost:3002/v1/auth/me \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**200 OK — example response**
+
+```json
+{
+  "id": "USR-00000001",
+  "username": "admin",
+  "roleId": "ROLE-00000001",
+  "firstName": "System",
+  "lastName": "Admin",
+  "companyId": "COM-00000001",
+  "contactId": null,
+  "createdAt": "2024-01-15T10:00:00.000Z",
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "role": {
+    "id": "ROLE-00000001",
+    "name": "SystemAdministrator",
+    "displayName": "System Administrator"
+  },
+  "permissions": [
+    { "code": "users:manage", "scope": "global" }
+  ],
+  "agent": null,
+  "client": null,
+  "account": null
+}
+```
+
+**Common error responses**
+
+| Status | Description |
+|--------|-------------|
+| `401 Unauthorized` | Missing or invalid access token. |

@@ -1,0 +1,84 @@
+---
+title: "Portfolio Dashboard: Holdings, Charts, and Performance"
+description: "Your dashboard covers portfolio valuation, performance charts, holdings breakdown, allocation donut chart, pending approvals banner, and TR client switching."
+---
+
+The portfolio dashboard at `/` is the main screen you see after logging in. It gives you a live view of your investment portfolio — how much it is worth, how your funds are allocated across assets and currencies, and how performance has changed over time. If you have a pending request awaiting approval, a banner appears at the top to keep you informed.
+
+## Portfolio overview
+
+The top section of the dashboard shows your portfolio's current value and key summary figures. This pulls from your account's latest valuation snapshot, which reflects settled holdings and the most recent exchange rates for any multi-currency positions.
+
+If your portfolio has not yet been approved by the back-office team, you will see a **Pending Approval** banner in place of live valuation data. Your portfolio moves from Draft to Active status once the admin team completes their review.
+
+<Note>
+Valuation figures update based on the most recent data synced from the trading platform. There may be a short delay between a trade settling and the updated value appearing on your dashboard.
+</Note>
+
+## Performance chart
+
+The dashboard includes a portfolio performance chart powered by Highcharts. The chart plots your portfolio's value over time using valuation history snapshots — each data point represents a recorded portfolio value at a specific date. Use the chart to:
+
+- See whether your portfolio has grown or declined over a selected period
+- Identify periods of significant change following market movements or strategy rebalancing
+- Compare your current value against historical benchmarks
+
+## Holdings breakdown
+
+Below the chart, your holdings are broken down by fund and asset. Each row shows:
+
+- The fund or instrument name
+- The number of units held
+- The current value in your account currency
+- The currency of the holding (for multi-currency portfolios)
+
+Holdings live on your trading account and are updated when trades settle via the FNZ/Tapico integration.
+
+## Allocation chart
+
+A donut chart visualises how your portfolio is divided across your current fund allocations. Each segment represents one fund, with its percentage of the total portfolio. This makes it easy to check whether your portfolio's actual allocation still matches your target strategy weightings.
+
+## Pending approvals banner
+
+If you have submitted a request that is awaiting admin review — such as a funding deposit, a withdrawal, or a portfolio strategy change — the **Pending Approvals** banner appears on the dashboard. The banner shows the type and status of each open request. You do not need to do anything further until the admin team acts on the request.
+
+<Tip>
+To view the full history of your requests and their current status, go to the **Requests** page at `/request/withdraw`.
+</Tip>
+
+## Account profile
+
+Your account profile is available at `/profile`. From there you can:
+
+- View your personal information and account details
+- Update your bank information (used for withdrawal processing)
+- Review account-level settings
+
+Changes to sensitive information, such as bank details, may require admin confirmation before taking effect.
+
+## Opening a trading account
+
+If you do not yet have a trading account linked to your client profile, you can apply to open one at `/open-trading-account`. This is a multi-step form that collects the information required to set up an account with the trading platform. Steps include personal details, identification, and account preferences.
+
+<Note>
+You need an active trading account before you can fund your portfolio or have trades executed on your behalf.
+</Note>
+
+## Trading Representative (TR) impersonation
+
+Trading Representatives see the same dashboard interface, but with an additional **Client Selector** at the top of the screen. The Client Selector is a dropdown that lists all clients the TR is authorised to manage.
+
+When a TR logs in, the `ClientGate` component blocks access to all features until a client is selected. Once a client is chosen:
+
+- The dashboard loads that client's portfolio data
+- All requests and actions are submitted on behalf of the selected client
+- The TR can switch to a different client at any time using the Client Selector, which immediately reloads the view for the newly selected client
+
+<CardGroup cols={2}>
+  <Card title="Onboarding wizard" icon="wand-magic-sparkles" href="/client/onboarding-wizard">
+    Set up your investment goal and risk profile to create your portfolio.
+  </Card>
+  <Card title="Funding and withdrawals" icon="money-bill-transfer" href="/client/funding-withdrawals">
+    Deposit funds into your portfolio or request a withdrawal.
+  </Card>
+</CardGroup>

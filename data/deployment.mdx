@@ -1,0 +1,182 @@
+---
+title: 'Kubernetes deployment, Docker, and environments'
+description: 'UBI8 Docker images, local Compose stack, UAT and prod Kubernetes namespaces, Istio config, CPU/memory allocations, and the Changesets versioning workflow.'
+---
+
+The platform runs four active services: two NestJS backends (`ms-robo-admin`, `ms-robo-web`) and two React frontends (`mfe-robo-admin`, `mfe-robo-web`). All are deployed to OpenShift-flavoured Kubernetes using Helm-style YAML manifests under `deployment/` in each repository. Local development uses Docker Compose for the backing infrastructure.
+
+## Local development infrastructure
+
+The local stack requires three Docker services. Each repository ships its own `docker-compose.yaml`; the canonical service definitions are:
+
+| Service | Image | Host port | Container port | Purpose |
+|---|---|---|---|---|
+| PostgreSQL | `postgres:17.5-alpine` | `5433` | `5432` | Shared database (`uob_portal`) |
+| SonarQube | `sonarqube:lts-community` | `9100` | `9000` | Static analysis dashboard |
+| Keycloak | `quay.io/keycloak/keycloak:26.2` | `8080` | `8080` | SSO identity provider |
+
+Start the infrastructure before running any backend service:
+
+```bash
+docker compose up -d
+```
+
+<Note>
+PostgreSQL is mapped to port **5433** (not the default 5432) to avoid conflicts with any locally installed PostgreSQL instance. All `DB_PORT` environment variables must be set to `5433` in local `.env` files.
+</Note>
+
+## Container images
+
+### Backend services (ms-robo-admin, ms-robo-web)
+
+Both backend services use the same Dockerfile pattern:
+
+- **Base image**: `registry.access.redhat.com/ubi8/nodejs-22:1-1761063689` (Red Hat UBI8)
+- **Runtime**: Bun is installed into `/opt/bun` at build time (UBI-safe curl install)
+- **Build process**: `bun install --frozen-lockfile` → `bun run build` → production-only reinstall
+- **User**: Runs as non-root user `1001` (OpenShift compliant)
+- **Filesystem ownership**: `chown -R 1001:0` with `g+rwX` permissions (group-writable for OpenShift arbitrary UIDs)
+- **Startup**: `node dist/main` — the compiled NestJS bundle, not Bun
+
+The `ms-robo-admin` container also runs `npm run db:migrate` before starting the application (configured in `deployment/base.yaml`), ensuring migrations are always applied on pod startup.
+
+```dockerfile
+# Ports
+ms-robo-admin  →  EXPOSE 3002
+ms-robo-web    →  EXPOSE 3001
+```
+
+### Frontend services (mfe-robo-admin, mfe-robo-web)
+
+Both frontend services use Nginx to serve the pre-built SPA:
+
+- **Base image**: `registry.access.redhat.com/ubi8/nginx-124:1-1766406056` (Nginx 1.24 on UBI8)
+- **Content**: The `dist/` directory from `bun run build` is copied to `/opt/app-root/src`
+- **Nginx config**: Custom `nginx.conf` with `try_files` for client-side routing
+- **User**: Runs as non-root user `1001`
+- **Port**: Both frontends expose port `8080` inside the container
+
+## Kubernetes environments
+
+<Tabs>
+  <Tab title="UAT">
+    **Namespace**: `uobrobo-uat`
+
+    All services deploy into the `uobrobo-uat` namespace on the nonprod OpenShift cluster.
+
+    | Service | Image tag format | Istio subdomain |
+    |---|---|---|
+    | ms-robo-admin | `ms-robo-admin:{version}-uat` | `ms-robo-admin.aws001nonprod.uobkayhian.com` |
+    | ms-robo-web | `ms-robo-web:{version}-uat` | `ms-robo-web.aws001nonprod.uobkayhian.com` |
+    | mfe-robo-admin | `mfe-robo-admin:{version}-uat` | `mfe-robo-admin.aws001nonprod.uobkayhian.com` |
+    | mfe-robo-web | `mfe-robo-web:{version}-uat` | `mfe-robo-web.aws001nonprod.uobkayhian.com` |
+
+    Images are pulled from the internal OpenShift registry: `image-registry.openshift-image-registry.svc:5000/uobrobo-uat/`.
+
+    UAT configuration (environment variables, secrets) is supplied via a ConfigMap named `{service}-env` that mounts a `.env` file at `/app/.env`. The ConfigMap data is defined directly in `deployment/uat.yaml`.
+
+    <Warning>
+    `deployment/uat.yaml` contains plaintext credentials. Do not commit credential changes to a public repository. Rotate secrets through the OpenShift console or CI pipeline, not by editing the manifest directly in version control.
+    </Warning>
+  </Tab>
+
+  <Tab title="Production">
+    **Namespace**: `uobrobo-prod`
+
+    The production deployment uses the same manifest structure as UAT but targets the `uobrobo-prod` namespace on the production cluster.
+
+    | Service | Istio domain |
+    |---|---|
+    | ms-robo-admin | `ms-robo-admin.aws001.uobkayhian.com` |
+
+    Production `deployment/prod.yaml` files contain minimal configuration — credentials are injected at deploy time by the CI/CD pipeline and are not stored in the repository.
+  </Tab>
+</Tabs>
+
+## Manifest structure
+
+Each service's `deployment/` directory contains three files:
+
+| File | Purpose |
+|---|---|
+| `base.yaml` | Default values for all environments: replicas, resource limits, container ports, volume mounts, pod anti-affinity, node selector |
+| `uat.yaml` | UAT-specific overrides: namespace, Istio domain, image tag, ConfigMap with `.env` data |
+| `prod.yaml` | Production-specific overrides: namespace, Istio domain, image tag |
+
+All deployments use a `RollingUpdate` strategy with `replicas: 1`. Pod anti-affinity rules prefer spreading replicas across availability zones (`topology.kubernetes.io/zone`). Node selector `workload: compute` targets the correct node pool.
+
+## Istio service mesh
+
+Each service has an Istio `VirtualService` and `Gateway` created automatically from the manifest. The `istio.enabled: true` flag in `base.yaml` activates this.
+
+In UAT, only the **internal** VirtualService is created (`external.create: false`). The TLS credential name `star-aws001nonprod-uobkayhian-com` is a wildcard certificate already provisioned in the cluster.
+
+## Resource allocation
+
+All four services declare explicit CPU and memory requests and limits. These values come from `deployment/base.yaml` in each repository.
+
+| Service | CPU request | CPU limit | Memory request | Memory limit |
+|---|---|---|---|---|
+| `ms-robo-admin` | 200m | 400m | 256Mi | 512Mi |
+| `ms-robo-web` | 200m | 400m | 256Mi | 512Mi |
+| `mfe-robo-admin` | 100m | 200m | 128Mi | 512Mi |
+| `mfe-robo-web` | 100m | 200m | 128Mi | 512Mi |
+
+Horizontal pod autoscaling (`autoscaling.enabled: false`) is disabled across all services. Scale vertically or increase `replicas` manually if needed.
+
+## Versioning and releases
+
+The platform uses [Changesets](https://github.com/changesets/changesets) for changelog-driven semantic versioning. Each service is an independent git repository with its own version.
+
+<Steps>
+  <Step title="Add a changeset entry">
+    From the service directory, run the interactive changeset prompt to describe the change and select a bump type (patch / minor / major):
+
+    ```bash
+    bun run changeset
+    ```
+
+    This creates a markdown file in `.changeset/` describing the change.
+  </Step>
+
+  <Step title="Bump the version">
+    Consume all pending changeset files, update `package.json`, and propagate the new version to the Kubernetes manifests:
+
+    ```bash
+    bun run version:bump
+    ```
+
+    The `scripts/sync-version.sh` script updates the image tags in `deployment/uat.yaml` and `deployment/prod.yaml` to match the new version in `package.json`.
+  </Step>
+
+  <Step title="Commit and push">
+    Commit the version bump following conventional commit format:
+
+    ```bash
+    git add .
+    git commit -m "chore(release): bump version to x.y.z"
+    git push
+    ```
+
+    The CI/CD pipeline builds and pushes the container image, then applies the updated manifests to the target namespace.
+  </Step>
+</Steps>
+
+## Conventional commits and commit enforcement
+
+All five repositories enforce [Conventional Commits](https://www.conventionalcommits.org/) via Husky pre-commit hooks and Commitlint.
+
+Format: `type(scope): subject`
+
+Examples:
+```bash
+feat(portfolio): add export endpoint
+fix(auth): handle expired refresh token edge case
+chore(release): bump version to 1.11.0
+```
+
+<Warning>
+Commitlint rejects any commit message containing a `Co-Authored-By:` trailer. Do not add AI attribution lines to commits — the hook will block the commit.
+</Warning>
+
+Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.

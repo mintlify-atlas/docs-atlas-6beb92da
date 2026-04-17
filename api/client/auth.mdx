@@ -1,0 +1,278 @@
+---
+title: "Client API Authentication Endpoints"
+description: "Login with username/password or Keycloak SSO, refresh tokens, inspect the current user, and end a session using the UTRADE Robo Client API on port 3001."
+---
+
+The Client API (`ms-robo-web`, port 3001) uses JWT-based authentication. All protected endpoints expect an `Authorization: Bearer <token>` header. The endpoints documented here are either public (no token required) or use the refresh-token guard. Once you obtain an `accessToken`, include it in every subsequent request.
+
+<Note>
+`JwtAuthGuard` is applied globally. Endpoints marked `@Public` opt out of this guard and accept unauthenticated requests.
+</Note>
+
+---
+
+## POST /v1/auth/login
+
+Authenticate with a username and password. Returns a short-lived access token and a long-lived refresh token.
+
+**Authentication**: None required (`@Public`)
+
+```bash
+curl -X POST http://localhost:3001/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "johndoe", "password": "password123"}'
+```
+
+### Request body
+
+<ParamField body="username" type="string" required>
+  The client's username. Minimum 3 characters. Transformed to lowercase and trimmed.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The client's password. Minimum 6 characters.
+</ParamField>
+
+### Response
+
+<ResponseField name="token" type="string" required>
+  Short-lived JWT access token. Include in the `Authorization: Bearer` header for all subsequent requests.
+</ResponseField>
+
+<ResponseField name="refreshToken" type="string" required>
+  Long-lived refresh token. Use with `POST /v1/auth/refresh` to obtain a new access token.
+</ResponseField>
+
+<ResponseField name="tokenExpires" type="number" required>
+  Unix timestamp (seconds) at which the access token expires.
+</ResponseField>
+
+<ResponseField name="user" type="object" required>
+  <Expandable title="user properties">
+    <ResponseField name="id" type="string">User UUID.</ResponseField>
+    <ResponseField name="username" type="string">Normalized username.</ResponseField>
+    <ResponseField name="roleId" type="string">Role identifier.</ResponseField>
+    <ResponseField name="role" type="string">Role name decoded from JWT (e.g., `Client`, `TradingRepresentative`).</ResponseField>
+    <ResponseField name="firstName" type="string">First name, may be null.</ResponseField>
+    <ResponseField name="lastName" type="string">Last name, may be null.</ResponseField>
+    <ResponseField name="companyId" type="string">Company identifier.</ResponseField>
+    <ResponseField name="contactId" type="string">Contact identifier, may be null.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp.</ResponseField>
+    <ResponseField name="updatedAt" type="string">ISO 8601 timestamp.</ResponseField>
+    <ResponseField name="client" type="object">Client profile, present when role is `Client`.</ResponseField>
+    <ResponseField name="agent" type="object">Agent profile, present when role is `TradingRepresentative`.</ResponseField>
+    <ResponseField name="account" type="object">Linked account summary, may be null.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Using the token
+
+After login, pass the `token` in every subsequent API call:
+
+```bash
+curl http://localhost:3001/v1/auth/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Error responses
+
+| Status | Meaning |
+|--------|---------|
+| 401 | Invalid credentials |
+| 422 | Validation failed (username too short, password too short) |
+
+---
+
+## POST /v1/auth/sso/callback
+
+Exchange a Keycloak PKCE authorization code for application tokens. The frontend generates the PKCE `codeVerifier`/`codeChallenge` pair, redirects the user to Keycloak, then sends the returned `code` here.
+
+**Authentication**: None required (`@Public`)
+
+<Note>
+The backend uses PKCE (Proof Key for Code Exchange) — never send a `codeVerifier` you did not generate yourself. Store the verifier in `sessionStorage` only, never in cookies or `localStorage`.
+</Note>
+
+```bash
+curl -X POST http://localhost:3001/v1/auth/sso/callback \
+  -H "Content-Type: application/json" \
+  -d '{
+    "code": "abc123...",
+    "codeVerifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+    "redirectUri": "http://localhost:5174/auth/callback"
+  }'
+```
+
+### SSO flow overview
+
+<Steps>
+  <Step title="Generate PKCE pair">
+    The frontend calls `generateCodeVerifier()` (64-char random string) and `generateCodeChallenge(verifier)` (SHA-256 → base64url). Store the verifier in `sessionStorage`.
+  </Step>
+  <Step title="Redirect to Keycloak">
+    Send the user to the Keycloak authorization endpoint with `code_challenge`, `code_challenge_method=S256`, `client_id`, and `redirect_uri`.
+  </Step>
+  <Step title="Receive callback">
+    Keycloak redirects to `/auth/callback?code=X&state=Y`. The frontend captures `code` from the query string.
+  </Step>
+  <Step title="Exchange code">
+    Call `POST /v1/auth/sso/callback` with the `code`, the saved `codeVerifier`, and the `redirectUri`.
+  </Step>
+  <Step title="Store tokens">
+    Store the returned `token` and `refreshToken` in `localStorage` under the keys `portal-accessToken` and `portal-refreshToken`.
+  </Step>
+</Steps>
+
+### Request body
+
+<ParamField body="code" type="string" required>
+  The authorization code returned by Keycloak in the callback query string.
+</ParamField>
+
+<ParamField body="codeVerifier" type="string" required>
+  The original PKCE code verifier string generated by the frontend before the redirect. Must be the exact value used to derive the `code_challenge`.
+</ParamField>
+
+<ParamField body="redirectUri" type="string" required>
+  The redirect URI registered with Keycloak. Must exactly match the URI used during the authorization request (e.g., `http://localhost:5174/auth/callback`).
+</ParamField>
+
+### Response
+
+Same shape as the login response, with one additional field:
+
+<ResponseField name="token" type="string" required>JWT access token.</ResponseField>
+<ResponseField name="refreshToken" type="string" required>JWT refresh token.</ResponseField>
+<ResponseField name="tokenExpires" type="number" required>Unix timestamp when the access token expires.</ResponseField>
+<ResponseField name="idTokenHint" type="string" required>
+  Keycloak ID token. Pass this to `POST /v1/auth/sso/logout` to ensure Keycloak also terminates the SSO session.
+</ResponseField>
+<ResponseField name="user" type="object" required>User profile. Same structure as the login response user object.</ResponseField>
+
+### Error responses
+
+| Status | Meaning |
+|--------|---------|
+| 400 | Missing or invalid `code`, `codeVerifier`, or `redirectUri` |
+| 401 | Keycloak rejected the code exchange (expired or already used code) |
+
+---
+
+## POST /v1/auth/refresh
+
+Exchange a valid refresh token for a new access token and refresh token pair. The previous refresh token is invalidated.
+
+**Authentication**: Refresh token in `Authorization: Bearer` header (`jwt-refresh` guard)
+
+```bash
+curl -X POST http://localhost:3001/v1/auth/refresh \
+  -H "Authorization: Bearer <refreshToken>"
+```
+
+### Response
+
+<ResponseField name="token" type="string" required>New JWT access token.</ResponseField>
+<ResponseField name="refreshToken" type="string" required>New JWT refresh token. Replace the previous value in storage.</ResponseField>
+<ResponseField name="tokenExpires" type="number" required>Unix timestamp when the new access token expires.</ResponseField>
+<ResponseField name="user" type="object" required>Current user profile.</ResponseField>
+
+### Error responses
+
+| Status | Meaning |
+|--------|---------|
+| 401 | Refresh token is invalid, expired, or already consumed |
+
+---
+
+## POST /v1/auth/logout
+
+Invalidate the current session. The access token and session record are revoked server-side.
+
+**Authentication**: Valid JWT access token required
+
+```bash
+curl -X POST http://localhost:3001/v1/auth/logout \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+### Response
+
+`204 No Content` — no response body.
+
+### Error responses
+
+| Status | Meaning |
+|--------|---------|
+| 401 | Token is missing or already invalid |
+
+---
+
+## POST /v1/auth/sso/logout
+
+Invalidate the current session and obtain a Keycloak logout URL. Redirect the user to this URL to also terminate the Keycloak SSO session.
+
+**Authentication**: Valid JWT access token required
+
+```bash
+curl -X POST http://localhost:3001/v1/auth/sso/logout \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{"idTokenHint": "<idTokenHint from sso/callback>"}'
+```
+
+### Request body
+
+<ParamField body="idTokenHint" type="string">
+  The `idTokenHint` value returned by `POST /v1/auth/sso/callback`. Required to allow Keycloak to identify and terminate the correct session. If omitted, the backend session is still invalidated but the Keycloak session may persist.
+</ParamField>
+
+### Response
+
+<ResponseField name="logoutUrl" type="string">
+  The Keycloak end-session URL. Redirect the user's browser to this URL to complete SSO logout. May be `null` if Keycloak could not generate the URL.
+</ResponseField>
+
+---
+
+## GET /v1/auth/me
+
+Return the full profile of the currently authenticated user, including linked client or agent records and account details.
+
+**Authentication**: Valid JWT access token required
+
+```bash
+curl http://localhost:3001/v1/auth/me \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+### Response
+
+<ResponseField name="id" type="string" required>User UUID.</ResponseField>
+<ResponseField name="username" type="string" required>Normalized username.</ResponseField>
+<ResponseField name="roleId" type="string" required>Role identifier.</ResponseField>
+<ResponseField name="role" type="string">Role name from JWT payload (e.g., `Client`, `TradingRepresentative`).</ResponseField>
+<ResponseField name="firstName" type="string">First name.</ResponseField>
+<ResponseField name="lastName" type="string">Last name.</ResponseField>
+<ResponseField name="companyId" type="string" required>Company identifier.</ResponseField>
+<ResponseField name="contactId" type="string">Contact identifier.</ResponseField>
+<ResponseField name="createdAt" type="string" required>ISO 8601 creation timestamp.</ResponseField>
+<ResponseField name="updatedAt" type="string" required>ISO 8601 last-updated timestamp.</ResponseField>
+<ResponseField name="client" type="object">
+  Client profile record. Present when the user has the `Client` role.
+  <Expandable title="client properties">
+    <ResponseField name="id" type="string">Client record ID.</ResponseField>
+    <ResponseField name="userId" type="string">Owning user ID.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="agent" type="object">
+  Agent/TR profile record. Present when the user has the `TradingRepresentative` role.
+</ResponseField>
+<ResponseField name="account" type="object">
+  Primary account summary linked to the user, if any.
+</ResponseField>
+
+### Error responses
+
+| Status | Meaning |
+|--------|---------|
+| 401 | Missing or invalid access token |

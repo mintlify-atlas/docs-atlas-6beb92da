@@ -1,0 +1,77 @@
+---
+title: "Client Portal Overview: Self-Service Investment Management"
+description: "Client portal guide: 15 available pages, two access types (client and TR), and the end-to-end workflow from onboarding through funding and withdrawals."
+---
+
+The UTRADE Robo client portal is a self-service web application that puts portfolio management in your hands. After logging in, you can set your investment goals, complete a risk assessment questionnaire, review a recommended portfolio strategy, fund your account, and track your holdings — without needing to contact an advisor for routine tasks.
+
+## Who can access the client portal
+
+Two types of users can log in to the client portal:
+
+- **Clients (USER role)** — individuals managing their own investment portfolios. You log in with your username and password, or through Single Sign-On (SSO) via Keycloak.
+- **Trading Representatives (TR role)** — advisors who manage portfolios on behalf of clients. When a TR logs in, they must first select a client using the **Client Selector** before any features become available. All actions taken by a TR are recorded against the selected client's account.
+
+<Note>
+If you are a Trading Representative, you will see a client selection screen immediately after login. You cannot access any features until you choose a client to work with.
+</Note>
+
+## Available pages
+
+The client portal has 15 pages covering every stage of your investment journey:
+
+| Page | Route | What you can do |
+|---|---|---|
+| Login | `/login` | Sign in with username/password or SSO |
+| SSO Callback | `/auth/callback` | Handled automatically after Keycloak authentication |
+| Dashboard | `/` | View your portfolio overview, holdings, and performance charts |
+| Goal Setup | `/objective/goal` | Choose your investment goal to start the onboarding wizard |
+| Strategy Selection | `/objective/portfolio-strategy` | Browse available model portfolio strategies |
+| Risk Questionnaire | `/objective/create-profile` | Complete the risk profiling questionnaire |
+| Confirm Risk | `/objective/confirm-risk` | Review and confirm your calculated risk assessment |
+| Investment Result | `/objective/result` | See your recommended investment plan |
+| Investment Plan | `/objective/investment-plan` | Review the full details of your plan before confirming |
+| Browse Funds | `/objective/browse-funds` | Explore the fund catalog associated with your strategy |
+| Requests | `/request/withdraw` | Submit and track funding deposits and withdrawal requests |
+| Change Password | `/settings/change_password` | Update your login password |
+| Profile | `/profile` | View and edit your account profile |
+| Open Trading Account | `/open-trading-account` | Apply to open a trading account via a multi-step form |
+
+## Key workflows
+
+Your typical journey through the client portal follows this sequence:
+
+<Steps>
+  <Step title="Complete onboarding">
+    Set your investment goal, choose a portfolio strategy, and complete the risk questionnaire. The wizard guides you through six steps and produces a recommended investment plan. See [Onboarding Wizard](/client/onboarding-wizard) for the full walkthrough.
+  </Step>
+  <Step title="Fund your portfolio">
+    Once your portfolio is created, submit a funding request to deposit money into your account. An admin will review and approve your deposit. See [Funding and Withdrawals](/client/funding-withdrawals).
+  </Step>
+  <Step title="Monitor your portfolio">
+    Return to the [Dashboard](/client/portfolio-dashboard) at any time to view your current holdings, portfolio value, allocation breakdown, and performance over time.
+  </Step>
+  <Step title="Request withdrawals">
+    When you want to take money out, submit a withdrawal request from the Requests page. Withdrawals are subject to your available balance and require admin approval.
+  </Step>
+  <Step title="Update your strategy">
+    If your goals or risk tolerance change, you can update your portfolio strategy. Changes go through the same approval workflow and require admin review before taking effect.
+  </Step>
+</Steps>
+
+## Quick links
+
+<CardGroup cols={2}>
+  <Card title="Onboarding wizard" icon="wand-magic-sparkles" href="/client/onboarding-wizard">
+    Walk through the six-step investment goal and risk profiling wizard.
+  </Card>
+  <Card title="Portfolio dashboard" icon="chart-line" href="/client/portfolio-dashboard">
+    Understand your holdings, performance charts, and pending approvals.
+  </Card>
+  <Card title="Funding and withdrawals" icon="money-bill-transfer" href="/client/funding-withdrawals">
+    Learn how to deposit funds and submit withdrawal requests.
+  </Card>
+  <Card title="Authentication" icon="lock" href="/auth/overview">
+    Learn about login options including SSO and password-based access.
+  </Card>
+</CardGroup>

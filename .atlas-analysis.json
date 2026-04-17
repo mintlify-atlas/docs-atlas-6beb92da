@@ -1,0 +1,122 @@
+{
+  "projectType": "saas",
+  "projectName": "UTRADE Robo Advisory",
+  "projectDescription": "A full-stack wealth management platform for UOB Kay Hian (Cambodia) that provides automated portfolio recommendations, risk profiling, trading execution, and an admin dashboard for managing client accounts and approval workflows.",
+  "theme": "luma",
+  "primaryColor": "#1a56db",
+  "lightColor": "#e8f0fe",
+  "darkColor": "#0d2b6e",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "introduction",
+              "architecture",
+              "local-setup"
+            ]
+          },
+          {
+            "group": "Authentication & RBAC",
+            "pages": [
+              "auth/overview",
+              "auth/keycloak-sso",
+              "auth/rbac"
+            ]
+          },
+          {
+            "group": "Admin Portal",
+            "pages": [
+              "admin/overview",
+              "admin/client-management",
+              "admin/portfolio-management",
+              "admin/request-approvals",
+              "admin/user-management"
+            ]
+          },
+          {
+            "group": "Client Portal",
+            "pages": [
+              "client/overview",
+              "client/onboarding-wizard",
+              "client/portfolio-dashboard",
+              "client/funding-withdrawals"
+            ]
+          },
+          {
+            "group": "Data & Infrastructure",
+            "pages": [
+              "data/schema-ownership",
+              "data/integrations",
+              "data/deployment"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Admin API (Port 3002)",
+            "pages": [
+              "api/admin/auth",
+              "api/admin/clients",
+              "api/admin/portfolios",
+              "api/admin/requests",
+              "api/admin/trading"
+            ]
+          },
+          {
+            "group": "Client API (Port 3001)",
+            "pages": [
+              "api/client/auth",
+              "api/client/portfolio",
+              "api/client/requests"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Questionnaire-based risk profiling with automated portfolio recommendations",
+    "Multi-step investment onboarding wizard for clients",
+    "Admin approval workflows for funding, withdrawal, and portfolio strategy requests",
+    "FNZ/Tapico trading integration with order execution and holdings tracking",
+    "Keycloak SSO with PKCE authorization code flow",
+    "Role-based access control with hierarchical permission scoping (global > company > branch > own)",
+    "Automated user synchronization from SUS8 Redshift datalake (cron: 2 AM daily)",
+    "Clean Architecture + CQRS backend pattern across NestJS services",
+    "Schema ownership model — ms-robo-admin is sole database schema owner",
+    "Dual-portal architecture: separate admin and client UIs with isolated JWT storage"
+  ],
+  "publicApiSurface": [
+    "POST /v1/auth/login",
+    "POST /v1/auth/refresh",
+    "POST /v1/auth/logout",
+    "GET /v1/auth/me",
+    "GET /v1/clients",
+    "GET /v1/clients/:id",
+    "GET /v1/portfolios",
+    "GET /v1/portfolios/:id",
+    "PATCH /v1/portfolios/:id/approve",
+    "GET /v1/portfolio-requests",
+    "PUT /v1/portfolio-requests/:id/approve",
+    "PUT /v1/portfolio-requests/:id/reject",
+    "GET /v1/portfolio-requests/pending-approvals",
+    "GET /v1/funding-requests",
+    "PUT /v1/funding-requests/:id/approve",
+    "GET /v1/withdraw-requests",
+    "PUT /v1/withdraw-requests/:id/approve",
+    "GET /v1/orders",
+    "GET /v1/admin/holdings",
+    "GET /v1/admin/valuations",
+    "GET /v1/instruments",
+    "GET /v1/questionnaires",
+    "GET /v1/roles",
+    "GET /v1/users"
+  ]
+}

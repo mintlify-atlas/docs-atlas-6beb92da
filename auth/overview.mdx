@@ -1,0 +1,121 @@
+---
+title: "Authentication Overview: Flows and Token Management"
+description: "Authenticate with UTRADE Robo using username/password or Keycloak SSO. Learn token usage, refresh on 401, and storage key prefixes for each portal."
+---
+
+The UTRADE Robo platform supports two authentication flows. The Admin API (`ms-robo-admin`, port 3002) accepts only username/password login. The Client API (`ms-robo-web`, port 3001) accepts both username/password and Keycloak SSO via PKCE. Both flows return a JWT access token and a refresh token that you use for every subsequent API request.
+
+## Authentication flows
+
+<CardGroup cols={2}>
+  <Card title="Username / password" icon="key">
+    POST credentials to `/v1/auth/login`. Returns tokens immediately. Used by both the Admin UI and the Client portal.
+  </Card>
+  <Card title="Keycloak SSO (PKCE)" icon="shield-check">
+    Redirect the user to Keycloak, receive an authorization code at `/auth/callback`, then exchange it via `/v1/auth/sso/callback`. Client portal only.
+  </Card>
+</CardGroup>
+
+## Username/password login
+
+Send a `POST` request to `/v1/auth/login` with a JSON body containing `username` and `password`.
+
+```bash
+curl -X POST https://api.example.com/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "trader", "password": "Trader@123"}'
+```
+
+A successful response returns three values you need to store:
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "tokenExpires": 1713484800,
+  "user": {
+    "id": "usr-00000001",
+    "username": "trader",
+    "roleId": "role-00000003",
+    "role": "TRADING_REPRESENTATIVE",
+    "companyId": "COM-00000001",
+    "firstName": "John",
+    "lastName": "Doe"
+  }
+}
+```
+
+| Field | Description |
+|---|---|
+| `token` | JWT access token. Valid for **1 day**. |
+| `refreshToken` | JWT refresh token. Valid for **30 days**. |
+| `tokenExpires` | Unix timestamp when the access token expires. |
+| `user` | Authenticated user object including role and company. |
+
+## Using the access token
+
+Include the access token in the `Authorization` header of every API request:
+
+```bash
+curl https://api.example.com/v1/clients \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+All endpoints require a valid token unless explicitly marked public. Requests without a token, or with an expired token, return `401 Unauthorized`.
+
+## Refreshing tokens
+
+When the access token expires, call `/v1/auth/refresh`. Pass the **refresh token** as the `Authorization` Bearer value — not the access token:
+
+```bash
+curl -X POST https://api.example.com/v1/auth/refresh \
+  -H "Authorization: Bearer <your-refresh-token>"
+```
+
+The response has the same shape as the login response: a new `token`, `refreshToken`, and `tokenExpires`.
+
+<Note>
+The refresh token is also rotated on each refresh call. Store the new refresh token from the response and discard the old one.
+</Note>
+
+## Automatic refresh on 401
+
+Both frontend applications implement automatic token refresh. When any API request returns `401 Unauthorized`, the client:
+
+1. Pauses all in-flight requests.
+2. Calls `POST /v1/auth/refresh` with the stored refresh token.
+3. Replays all queued requests with the new access token.
+4. If the refresh also fails, clears tokens and redirects to login.
+
+If you are building your own integration, implement the same queuing pattern to avoid parallel refresh races.
+
+## Token storage prefixes
+
+The two frontends run on the same domain, so each uses a localStorage key prefix to keep tokens isolated:
+
+| Interface | Access token key | Refresh token key | Auth storage key |
+|---|---|---|---|
+| Admin UI (`mfe-robo-admin`) | `admin-accessToken` | `admin-refreshToken` | `admin-auth-storage` |
+| Client portal (`mfe-robo-web`) | `portal-accessToken` | `portal-refreshToken` | `portal-auth-storage` |
+
+<Warning>
+If you integrate a third-party client on the same domain as one of the portals, use a different key prefix so you do not overwrite stored tokens.
+</Warning>
+
+## Logout
+
+Call `POST /v1/auth/logout` to invalidate the current session on the server:
+
+```bash
+curl -X POST https://api.example.com/v1/auth/logout \
+  -H "Authorization: Bearer <your-access-token>"
+```
+
+For SSO sessions, use the dedicated `POST /v1/auth/sso/logout` endpoint instead. See [Keycloak SSO](/auth/keycloak-sso) for the full SSO logout flow.
+
+## Token TTL summary
+
+| Token | TTL |
+|---|---|
+| Access token | 1 day |
+| Refresh token | 30 days |

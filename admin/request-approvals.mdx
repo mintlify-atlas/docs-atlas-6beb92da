@@ -1,0 +1,138 @@
+---
+title: "Request Approvals: Funding, Withdrawals, and Portfolios"
+description: "Review and act on pending client requests for funding deposits, fund withdrawals, and portfolio strategy changes through the admin portal approval queues."
+---
+
+The admin portal provides three dedicated approval queues: one each for funding requests, withdrawal requests, and portfolio change requests. All three follow the same state machine and approval pattern — requests move from submission through review to a final approved or rejected state. The dashboard at `/dashboard` shows a live count of pending approvals across all three queues so back office staff can see at a glance how much work is outstanding.
+
+Approving or rejecting requests requires the `BACK_OFFICE_USER` or `SYSTEM_ADMINISTRATOR` role. Staff and Trading Representative roles can view requests but cannot approve or reject them.
+
+## Request lifecycle
+
+All three request types share a common status progression:
+
+```
+draft → pending_user_confirmation → pending_approval → approved / rejected
+                                                     → processing → completed / failed
+                                                                  → cancelled
+```
+
+Requests arrive in the admin approval queues when they reach `pending_approval` status — meaning the client has already confirmed the request from their portal. The admin's job is to review and action it.
+
+## Approval workflows
+
+<Tabs>
+  <Tab title="Funding requests">
+    Funding requests represent client deposit instructions. Navigate to `/funding-requests` to see all requests, filtered by default to those awaiting approval.
+
+    **Request fields:**
+    - Account name and ID
+    - Requester name
+    - Request date
+    - Amount and currency
+    - Attached supporting document (if provided by the client)
+    - Expiry date
+
+    **Approving a funding request:**
+    <Steps>
+      <Step title="Open the request">
+        Click the request row to open the detail view. Review the amount, account, and any attachment.
+      </Step>
+      <Step title="Verify the deposit details">
+        Confirm the amount and currency match the client's intent. Download and review the attachment if present.
+      </Step>
+      <Step title="Approve or reject">
+        Click **Approve** to move the request to `approved` status, which triggers downstream processing. If there is a problem with the request, click **Reject** and enter a mandatory rejection reason. The reason is visible to the client.
+      </Step>
+    </Steps>
+
+    <Note>
+      Only requests in `pending_approval` status can be approved or rejected. Requests in `processing`, `completed`, `failed`, or `cancelled` are read-only.
+    </Note>
+  </Tab>
+  <Tab title="Withdrawal requests">
+    Withdrawal requests cover three sub-types: `fund_withdrawal`, `request_cancellation`, and `investment_redemption`. Navigate to `/withdrawal-requests` to manage them.
+
+    **Request fields:**
+    - Account name and ID
+    - Requester name
+    - Request type (withdrawal, cancellation, or redemption)
+    - Request date
+    - Amount and currency
+    - Expiry date
+
+    **Approving a withdrawal request:**
+    <Steps>
+      <Step title="Open the request">
+        Click the request row. Note the request type — the action taken downstream depends on whether this is a fund withdrawal, a cancellation of an earlier request, or a full investment redemption.
+      </Step>
+      <Step title="Review the request">
+        Confirm the amount, currency, and account. For redemption requests, verify that the client's holdings are sufficient to cover the withdrawal amount.
+      </Step>
+      <Step title="Approve or reject">
+        Click **Approve** to confirm the withdrawal. For rejections, provide a reason — this is mandatory and is returned to the client.
+      </Step>
+    </Steps>
+
+    <Warning>
+      Approved redemption requests (`investment_redemption`) trigger order execution via the FNZ/Tapico trading integration. Ensure the request details are correct before approving, as this action initiates a live trade.
+    </Warning>
+  </Tab>
+  <Tab title="Portfolio requests">
+    Portfolio requests represent strategy changes — either an initial portfolio assignment or a change to an existing portfolio's risk level. Navigate to `/portfolio-requests` to manage them.
+
+    **Request fields:**
+    - Account name and ID
+    - Initiator name (could be the client or an admin)
+    - Request type: `ADMIN_INITIATED`, `USER_INITIATED`, or `AUTOMATIC`
+    - Request sub-type: `assignment` (first-time portfolio creation) or `change` (existing portfolio update)
+    - Current risk level (if changing)
+    - Suggested risk level and suggested portfolio ID
+    - Risk profile score and whether the score was manually overridden
+    - Reason or justification
+
+    **Approving a portfolio request:**
+    <Steps>
+      <Step title="Open the request">
+        Click the request row. Review the current and suggested portfolio details side by side.
+      </Step>
+      <Step title="Check the risk profile">
+        Review the client's risk profile score and whether it was overridden. The `suggestedRiskLevel` should match the score band. If the score was overridden, the `isOverridden` flag is set to `true` — apply additional scrutiny in these cases.
+      </Step>
+      <Step title="Add approval notes (optional)">
+        Enter any notes relevant to the approval decision. These are stored against the request record.
+      </Step>
+      <Step title="Approve or reject">
+        Click **Approve** to accept the strategy change. The portfolio is updated with the new risk level and template assignment. For rejections, a rejection reason is required and is stored in the `rejectionReason` field.
+      </Step>
+    </Steps>
+
+    <Note>
+      The pending approvals endpoint at `/v1/portfolio-requests/pending-approvals` powers the dashboard count. The same data is also available in full at `/portfolio-requests` with status filter set to `pending_approval`.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Filtering and searching requests
+
+All three approval queues support the same set of filters:
+
+| Filter | Description |
+|---|---|
+| **Status** | Filter by any status value (draft, pending_approval, approved, rejected, etc.) |
+| **Account** | Filter by account ID |
+| **Date range** | Narrow by request date (from / to) |
+| **Sort** | Sort by any column ascending or descending |
+
+The default view on each page shows only `pending_approval` records so the queue is immediately actionable. Change the status filter to see the full history.
+
+## Who can approve what
+
+| Action | BACK_OFFICE_USER | SYSTEM_ADMINISTRATOR | STAFF | TRADING_REPRESENTATIVE |
+|---|---|---|---|---|
+| View funding requests | Yes | Yes | Yes | No |
+| Approve / reject funding | Yes | Yes | No | No |
+| View withdrawal requests | Yes | Yes | Yes | No |
+| Approve / reject withdrawals | Yes | Yes | No | No |
+| View portfolio requests | Yes | Yes | Yes | No |
+| Approve / reject portfolio requests | Yes | Yes | No | No |

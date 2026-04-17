@@ -1,0 +1,546 @@
+---
+title: 'Admin API — Funding, Withdrawal & Portfolio Requests'
+description: 'Endpoints for submitting and approving funding requests, withdrawal requests, and portfolio change requests in the UTRADE Robo Admin API.'
+---
+
+The Admin API exposes three parallel request workflows: **funding requests** (cash deposits into an account), **withdrawal requests** (cash or instrument withdrawals), and **portfolio requests** (risk-profile and strategy change requests). All three follow the same lifecycle pattern: create → submit for approval → approve or reject. All endpoints require `Authorization: Bearer <accessToken>`.
+
+**Base URL (development):** `http://localhost:3002`
+
+---
+
+## Funding Requests
+
+Funding requests record a client's intention to deposit cash into a trading account. Each request requires a proof-of-transfer file attachment (JPEG, PNG, PDF, or HEIC; maximum 10 MB).
+
+### POST /v1/funding-requests
+
+Create a new funding request with a proof-of-transfer file. The request body is submitted as `multipart/form-data`.
+
+#### Request fields
+
+<ParamField body="accountId" type="string" required>
+  The account ID to fund (e.g. `ACC-00000001`).
+</ParamField>
+
+<ParamField body="amount" type="number" required>
+  Amount to deposit. Must be a positive number.
+</ParamField>
+
+<ParamField body="currency" type="string" required default="SGD">
+  ISO 4217 currency code (e.g. `SGD`). Exactly 3 characters.
+</ParamField>
+
+<ParamField body="proofOfTransfer" type="binary" required>
+  Proof-of-transfer file. Accepted types: JPEG, PNG, PDF, HEIC. Maximum size 10 MB.
+</ParamField>
+
+#### Response
+
+<ResponseField name="id" type="string">Created request ID.</ResponseField>
+<ResponseField name="status" type="string">Initial status (typically `pending`).</ResponseField>
+<ResponseField name="message" type="string">Human-readable confirmation message.</ResponseField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/funding-requests \
+  -H "Authorization: Bearer <accessToken>" \
+  -F "accountId=ACC-00000001" \
+  -F "amount=10000" \
+  -F "currency=SGD" \
+  -F "proofOfTransfer=@/path/to/transfer-slip.pdf"
+```
+
+**201 Created — example response**
+
+```json
+{
+  "id": "FRQ-00000001",
+  "status": "pending",
+  "message": "Funding request submitted successfully"
+}
+```
+
+---
+
+### GET /v1/funding-requests
+
+List all funding requests (admin view — not filtered by current user) with optional filters.
+
+#### Query parameters
+
+<ParamField query="accountId" type="string">Filter by account ID.</ParamField>
+<ParamField query="status" type="string">Filter by status (`pending`, `approved`, `rejected`, `expired`).</ParamField>
+<ParamField query="fromDate" type="string">Filter requests from this date (ISO format, e.g. `2024-01-01`).</ParamField>
+<ParamField query="toDate" type="string">Filter requests up to this date (ISO format, e.g. `2024-12-31`).</ParamField>
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="20">Records per page.</ParamField>
+<ParamField query="sortBy" type="string">Sort column.</ParamField>
+<ParamField query="sortOrder" type="string" default="DESC">Sort direction: `ASC` or `DESC`.</ParamField>
+
+#### Response
+
+<ResponseField name="data" type="array" required>Array of funding request objects.</ResponseField>
+<ResponseField name="total" type="number">Total matching records.</ResponseField>
+<ResponseField name="page" type="number">Current page.</ResponseField>
+<ResponseField name="limit" type="number">Records per page.</ResponseField>
+<ResponseField name="totalPages" type="number">Total pages.</ResponseField>
+
+```bash cURL
+curl "http://localhost:3002/v1/funding-requests?status=pending&page=1&limit=20" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### GET /v1/funding-requests/pending-approvals
+
+List only the funding requests that are pending approval. Convenience endpoint for the approvals queue.
+
+<Note>
+Requires `funding-requests:approve` permission.
+</Note>
+
+#### Query parameters
+
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="20">Records per page.</ParamField>
+<ParamField query="sortBy" type="string">Sort column.</ParamField>
+<ParamField query="sortOrder" type="string" default="DESC">Sort direction.</ParamField>
+
+```bash cURL
+curl "http://localhost:3002/v1/funding-requests/pending-approvals" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### GET /v1/funding-requests/:id
+
+Retrieve full details of a single funding request, including attachment metadata.
+
+<ParamField path="id" type="string" required>Funding request ID.</ParamField>
+
+#### Response
+
+<ResponseField name="id" type="string">Request ID.</ResponseField>
+<ResponseField name="accountId" type="string">Account ID.</ResponseField>
+<ResponseField name="accountName" type="string">Account display name.</ResponseField>
+<ResponseField name="requesterId" type="string">User ID of the requester.</ResponseField>
+<ResponseField name="requesterName" type="string">Requester's display name.</ResponseField>
+<ResponseField name="requestDate" type="string">ISO 8601 timestamp the request was created.</ResponseField>
+<ResponseField name="status" type="string">Current status.</ResponseField>
+<ResponseField name="statusDisplayName" type="string">Human-readable status label.</ResponseField>
+<ResponseField name="amount" type="number">Requested amount.</ResponseField>
+<ResponseField name="currency" type="string">Currency code.</ResponseField>
+<ResponseField name="attachment" type="object">
+  Attachment metadata, nullable.
+  <Expandable title="attachment properties">
+    <ResponseField name="attachmentKey" type="string">Storage key for the file.</ResponseField>
+    <ResponseField name="attachmentName" type="string">Original filename.</ResponseField>
+    <ResponseField name="attachmentType" type="string">MIME type.</ResponseField>
+    <ResponseField name="attachmentSize" type="number">File size in bytes.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="approverId" type="string">User ID of the approver, nullable.</ResponseField>
+<ResponseField name="approverName" type="string">Approver's display name, nullable.</ResponseField>
+<ResponseField name="approvedAt" type="string">ISO 8601 approval timestamp, nullable.</ResponseField>
+<ResponseField name="rejectionReason" type="string">Rejection reason, nullable.</ResponseField>
+<ResponseField name="processedAt" type="string">ISO 8601 processing timestamp, nullable.</ResponseField>
+<ResponseField name="expiresAt" type="string">ISO 8601 expiry timestamp, nullable.</ResponseField>
+<ResponseField name="createdAt" type="string">ISO 8601 creation timestamp.</ResponseField>
+<ResponseField name="updatedAt" type="string">ISO 8601 last-updated timestamp.</ResponseField>
+
+```bash cURL
+curl http://localhost:3002/v1/funding-requests/FRQ-00000001 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### POST /v1/funding-requests/:id/approve
+
+Approve a pending funding request.
+
+<Note>
+Requires `funding-requests:approve` permission.
+</Note>
+
+<ParamField path="id" type="string" required>Funding request ID.</ParamField>
+
+No request body.
+
+#### Response
+
+<ResponseField name="id" type="string">Request ID.</ResponseField>
+<ResponseField name="previousStatus" type="string">Status before approval.</ResponseField>
+<ResponseField name="currentStatus" type="string">Status after approval (e.g. `approved`).</ResponseField>
+<ResponseField name="message" type="string">Confirmation message.</ResponseField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/funding-requests/FRQ-00000001/approve \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### POST /v1/funding-requests/:id/reject
+
+Reject a pending funding request with a reason.
+
+<Note>
+Requires `funding-requests:approve` permission.
+</Note>
+
+<ParamField path="id" type="string" required>Funding request ID.</ParamField>
+
+#### Request body
+
+<ParamField body="rejectionReason" type="string" required>
+  Reason for rejection. Stored and visible to the requester.
+</ParamField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/funding-requests/FRQ-00000001/reject \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{ "rejectionReason": "Proof of transfer does not match amount stated" }'
+```
+
+---
+
+## Withdrawal Requests
+
+The withdrawal controller exposes three distinct sub-types through separate creation endpoints, all under `POST /v1/withdraw-requests/*`.
+
+### POST /v1/withdraw-requests/fund-withdrawal
+
+Create a cash withdrawal request from a client account to a designated bank account.
+
+#### Request body
+
+<ParamField body="accountId" type="string" required>Source account ID.</ParamField>
+<ParamField body="amount" type="number" required>Withdrawal amount. Must be positive.</ParamField>
+<ParamField body="currency" type="string" required>ISO 4217 currency code.</ParamField>
+<ParamField body="bankAccountNumber" type="string" required>Destination bank account number.</ParamField>
+<ParamField body="bankName" type="string" required>Name of the destination bank.</ParamField>
+<ParamField body="bankCode" type="string" required>Bank routing code (e.g. SWIFT/BIC).</ParamField>
+<ParamField body="beneficiaryName" type="string" required>Name of the account holder at the destination bank.</ParamField>
+<ParamField body="withdrawalMethod" type="string">Withdrawal method (e.g. `FAST`, `GIRO`, `TELEGRAPHIC`).</ParamField>
+<ParamField body="purpose" type="string">Purpose of withdrawal for compliance records.</ParamField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/withdraw-requests/fund-withdrawal \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accountId": "ACC-00000001",
+    "amount": 5000,
+    "currency": "SGD",
+    "bankAccountNumber": "123-456-789",
+    "bankName": "DBS Bank",
+    "bankCode": "DBSSSGSG",
+    "beneficiaryName": "John Doe",
+    "withdrawalMethod": "FAST"
+  }'
+```
+
+**201 Created — example response**
+
+```json
+{
+  "id": "WRQ-00000001",
+  "status": "pending",
+  "message": "Withdrawal request created successfully"
+}
+```
+
+---
+
+### POST /v1/withdraw-requests/investment-redemption
+
+Create an investment redemption request to liquidate holdings.
+
+#### Request body
+
+<ParamField body="accountId" type="string" required>Account holding the instrument.</ParamField>
+<ParamField body="holdingId" type="string" required>Holding record ID.</ParamField>
+<ParamField body="instrumentId" type="string" required>Instrument to redeem.</ParamField>
+<ParamField body="instrumentCode" type="string" required>Instrument ticker/code.</ParamField>
+<ParamField body="instrumentName" type="string" required>Instrument display name.</ParamField>
+<ParamField body="quantity" type="number" required>Number of units to redeem.</ParamField>
+<ParamField body="redemptionType" type="string" required>Type of redemption (e.g. `full`, `partial`).</ParamField>
+<ParamField body="settlementCurrency" type="string" required>ISO 4217 currency for settlement proceeds.</ParamField>
+<ParamField body="estimatedValue" type="number">Estimated market value of the redemption.</ParamField>
+
+---
+
+### GET /v1/withdraw-requests
+
+List all withdrawal requests with optional filters.
+
+#### Query parameters
+
+<ParamField query="accountId" type="string">Filter by account ID.</ParamField>
+<ParamField query="requestType" type="string">Filter by type (`fund_withdrawal`, `investment_redemption`, `request_cancellation`).</ParamField>
+<ParamField query="status" type="string">Filter by status.</ParamField>
+<ParamField query="fromDate" type="string">Start date filter (ISO format).</ParamField>
+<ParamField query="toDate" type="string">End date filter (ISO format).</ParamField>
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="20">Records per page.</ParamField>
+<ParamField query="sortBy" type="string">Sort column.</ParamField>
+<ParamField query="sortOrder" type="string" default="DESC">Sort direction.</ParamField>
+
+```bash cURL
+curl "http://localhost:3002/v1/withdraw-requests?requestType=fund_withdrawal&status=pending" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### GET /v1/withdraw-requests/pending-approvals
+
+Pending approval queue for withdrawal requests.
+
+<Note>
+Requires `withdraw-requests:approve` permission.
+</Note>
+
+```bash cURL
+curl "http://localhost:3002/v1/withdraw-requests/pending-approvals" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### GET /v1/withdraw-requests/:id
+
+Retrieve a single withdrawal request.
+
+<ParamField path="id" type="string" required>Withdrawal request ID.</ParamField>
+
+```bash cURL
+curl http://localhost:3002/v1/withdraw-requests/WRQ-00000001 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### POST /v1/withdraw-requests/:id/approve
+
+Approve a withdrawal request.
+
+<Note>
+Requires `withdraw-requests:approve` permission.
+</Note>
+
+<ParamField path="id" type="string" required>Withdrawal request ID.</ParamField>
+
+#### Request body
+
+<ParamField body="notes" type="string">Optional approval notes.</ParamField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/withdraw-requests/WRQ-00000001/approve \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{ "notes": "Verified bank details match client records" }'
+```
+
+---
+
+### POST /v1/withdraw-requests/:id/reject
+
+Reject a withdrawal request.
+
+<Note>
+Requires `withdraw-requests:approve` permission.
+</Note>
+
+<ParamField path="id" type="string" required>Withdrawal request ID.</ParamField>
+
+#### Request body
+
+<ParamField body="rejectionReason" type="string" required>Reason for rejection.</ParamField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/withdraw-requests/WRQ-00000001/reject \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{ "rejectionReason": "Insufficient balance after pending orders" }'
+```
+
+---
+
+## Portfolio Requests
+
+Portfolio requests represent a proposed change to a client's portfolio strategy or risk allocation. They may be initiated by the client, by a Trading Representative, or by an admin. Requests initiated by admin require client confirmation before approval.
+
+### POST /v1/portfolio-requests
+
+Create an admin-initiated portfolio change request for a target user.
+
+<Note>
+Requires `portfolio-requests:create` permission with `branch` scope.
+</Note>
+
+#### Request body
+
+<ParamField body="targetUserId" type="string" required>
+  User ID of the client whose portfolio will change.
+</ParamField>
+
+<ParamField body="portfolioId" type="string" required>
+  The client's current portfolio ID (used to find the associated risk submission).
+</ParamField>
+
+<ParamField body="reason" type="string" required>
+  Reason for initiating this change. Stored in the audit trail.
+</ParamField>
+
+<ParamField body="suggestedPortfolioId" type="string">
+  Target portfolio template ID to assign. Provide either this or `suggestedRiskLevel`.
+</ParamField>
+
+<ParamField body="suggestedRiskLevel" type="string">
+  Suggested risk level (`low`, `medium`, `high`). The system will find the matching portfolio template. Provide either this or `suggestedPortfolioId`.
+</ParamField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/portfolio-requests \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targetUserId": "USR-00000005",
+    "portfolioId": "PTF-00000001",
+    "suggestedRiskLevel": "low",
+    "reason": "Client risk profile changed after annual review"
+  }'
+```
+
+**201 Created — example response**
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "accountId": "ACC-00000001",
+  "requesterId": "USR-00000001",
+  "requestType": "portfolio_assignment",
+  "requestDate": "2024-01-15T10:00:00.000Z",
+  "status": "pending_user_confirmation",
+  "details": {
+    "requestType": "assignment",
+    "initiatedBy": "admin",
+    "targetUserId": "USR-00000005",
+    "suggestedPortfolioId": "TPL-00000001",
+    "suggestedRiskLevel": "low",
+    "riskProfile": { "type": "CONSERVATIVE", "score": 20, "isOverridden": false },
+    "reason": "Client risk profile changed after annual review"
+  },
+  "approverId": null,
+  "approvedAt": null,
+  "rejectionReason": null,
+  "processedAt": null,
+  "createdAt": "2024-01-15T10:00:00.000Z",
+  "updatedAt": "2024-01-15T10:00:00.000Z"
+}
+```
+
+---
+
+### GET /v1/portfolio-requests
+
+List all portfolio requests. Requires `portfolio:read` permission; returns results across all users and accounts.
+
+<Note>
+Requires `portfolio:read` permission.
+</Note>
+
+#### Query parameters
+
+<ParamField query="accountId" type="string">Filter by account ID.</ParamField>
+<ParamField query="requesterId" type="string">Filter by requester user ID.</ParamField>
+<ParamField query="targetUserId" type="string">Filter by target user ID.</ParamField>
+<ParamField query="requestType" type="string">Filter by request type.</ParamField>
+<ParamField query="status" type="string">Filter by status.</ParamField>
+<ParamField query="initiatedBy" type="string">Filter by initiator: `user` or `admin`.</ParamField>
+<ParamField query="fromDate" type="string">Start date filter (ISO format).</ParamField>
+<ParamField query="toDate" type="string">End date filter (ISO format).</ParamField>
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="20">Records per page.</ParamField>
+<ParamField query="sortBy" type="string">Sort column.</ParamField>
+<ParamField query="sortOrder" type="string" default="DESC">Sort direction.</ParamField>
+
+```bash cURL
+curl "http://localhost:3002/v1/portfolio-requests?status=pending_approval&page=1" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### GET /v1/portfolio-requests/pending-approvals
+
+Pending approval queue for portfolio requests.
+
+<Note>
+Requires `portfolio:approve` permission.
+</Note>
+
+```bash cURL
+curl "http://localhost:3002/v1/portfolio-requests/pending-approvals?page=1&limit=20" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### GET /v1/portfolio-requests/:id
+
+Retrieve a single portfolio request with full details.
+
+<ParamField path="id" type="string" required>Portfolio request ID.</ParamField>
+
+```bash cURL
+curl http://localhost:3002/v1/portfolio-requests/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### POST /v1/portfolio-requests/:id/approve
+
+Approve a portfolio request that is pending approval.
+
+<Note>
+Requires `portfolio:approve` permission.
+</Note>
+
+<ParamField path="id" type="string" required>Portfolio request ID.</ParamField>
+
+No request body.
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/portfolio-requests/550e8400-e29b-41d4-a716-446655440000/approve \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### POST /v1/portfolio-requests/:id/reject
+
+Reject a portfolio request with a reason.
+
+<Note>
+Requires `portfolio:approve` permission.
+</Note>
+
+<ParamField path="id" type="string" required>Portfolio request ID.</ParamField>
+
+#### Request body
+
+<ParamField body="reason" type="string" required>Reason for rejection.</ParamField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/portfolio-requests/550e8400-e29b-41d4-a716-446655440000/reject \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{ "reason": "Risk level change not supported for this account type" }'
+```

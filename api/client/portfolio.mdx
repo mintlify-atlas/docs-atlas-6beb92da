@@ -1,0 +1,548 @@
+---
+title: "Portfolio, Accounts, and Instruments Endpoints"
+description: "Client API portfolio endpoints: accounts, portfolios, portfolio templates, risk questionnaires, instruments, and holdings on port 3001."
+---
+
+The portfolio group of endpoints covers everything a client needs to view and manage their investment position: account details, portfolio holdings, strategy changes, risk profiling questionnaires, and available instruments. All endpoints require a valid JWT access token in the `Authorization: Bearer` header.
+
+<Note>
+Trading Representative (TR) users can pass an optional `userId` query parameter to access a client's data on their behalf. The backend resolves this via `TrAccessService` and validates that the TR has access to the specified client account.
+</Note>
+
+---
+
+## Accounts
+
+### GET /v1/accounts
+
+List all accounts belonging to the authenticated client.
+
+**Authentication**: JWT required
+
+```bash
+curl http://localhost:3001/v1/accounts \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+### Response
+
+<ResponseField name="data" type="object[]" required>
+  Array of account objects.
+  <Expandable title="account properties">
+    <ResponseField name="id" type="string">Account ID (e.g., `ACC-00000001`).</ResponseField>
+    <ResponseField name="name" type="string">Display name of the account.</ResponseField>
+    <ResponseField name="userId" type="string">Owning user ID.</ResponseField>
+    <ResponseField name="status" type="string">Account status (`active`, `inactive`, `closed`).</ResponseField>
+    <ResponseField name="bankAccountNumber" type="string">Linked bank account number, may be null.</ResponseField>
+    <ResponseField name="bankName" type="string">Linked bank name, may be null.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp.</ResponseField>
+    <ResponseField name="updatedAt" type="string">ISO 8601 timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+### GET /v1/accounts/:id
+
+Retrieve a single account by ID.
+
+**Authentication**: JWT required
+
+```bash
+curl http://localhost:3001/v1/accounts/ACC-00000001 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>
+  Account ID (e.g., `ACC-00000001`).
+</ParamField>
+
+#### Response
+
+Single account object with the same shape as listed in `GET /v1/accounts`.
+
+#### Error responses
+
+| Status | Meaning |
+|--------|---------|
+| 403 | Account belongs to a different user |
+| 404 | Account not found |
+
+---
+
+### GET /v1/accounts/:id/valuation-history
+
+Retrieve the historical valuation data for a specific account, used for charting portfolio performance over time.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/accounts/ACC-00000001/valuation-history" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>
+  Account ID.
+</ParamField>
+
+---
+
+### PATCH /v1/accounts/:id
+
+Update the account name or linked bank details for the authenticated user.
+
+**Authentication**: JWT required
+
+```bash
+curl -X PATCH http://localhost:3001/v1/accounts/ACC-00000001 \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My Retirement Account",
+    "bankAccountNumber": "0123456789",
+    "bankName": "DBS Bank",
+    "bankCode": "7171",
+    "beneficiaryName": "John Doe"
+  }'
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>
+  Account ID.
+</ParamField>
+
+#### Request body
+
+<ParamField body="name" type="string">
+  New display name for the account.
+</ParamField>
+
+<ParamField body="bankAccountNumber" type="string">
+  Bank account number for withdrawals.
+</ParamField>
+
+<ParamField body="bankName" type="string">
+  Name of the bank.
+</ParamField>
+
+<ParamField body="bankCode" type="string">
+  Bank clearing code.
+</ParamField>
+
+<ParamField body="beneficiaryName" type="string">
+  Name of the account beneficiary.
+</ParamField>
+
+#### Response
+
+Returns the updated account object.
+
+---
+
+## Portfolios
+
+### GET /v1/portfolios/my-portfolios
+
+Retrieve all portfolios belonging to the authenticated user, with their latest portfolio request status. Supports pagination and sorting.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/portfolios/my-portfolios?page=1&limit=20" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Query parameters
+
+<ParamField query="page" type="number" default="1">
+  Page number for pagination.
+</ParamField>
+
+<ParamField query="limit" type="number" default="20">
+  Number of results per page.
+</ParamField>
+
+<ParamField query="sortBy" type="string">
+  Field to sort by (e.g., `createdAt`).
+</ParamField>
+
+<ParamField query="sortOrder" type="string">
+  Sort direction: `ASC` or `DESC`.
+</ParamField>
+
+<ParamField query="userId" type="string">
+  TR only. The client user ID to fetch portfolios on behalf of.
+</ParamField>
+
+#### Response
+
+<ResponseField name="data" type="object[]" required>
+  Paginated array of portfolio objects.
+  <Expandable title="portfolio properties">
+    <ResponseField name="id" type="string">Portfolio ID (e.g., `PTF-00000001`).</ResponseField>
+    <ResponseField name="name" type="string">Portfolio name, may be null.</ResponseField>
+    <ResponseField name="description" type="string">Portfolio description, may be null.</ResponseField>
+    <ResponseField name="riskLevel" type="string">Risk level: `HIGH`, `MEDIUM`, or `LOW`.</ResponseField>
+    <ResponseField name="userId" type="string">Owner user ID.</ResponseField>
+    <ResponseField name="status" type="string">Portfolio status: `draft`, `active`, `rebalancing`, or `closed`.</ResponseField>
+    <ResponseField name="isPrimary" type="boolean">Whether this is the user's primary portfolio.</ResponseField>
+    <ResponseField name="requestId" type="string">Latest portfolio request ID, may be null.</ResponseField>
+    <ResponseField name="requestStatus" type="string">Latest request status (e.g., `PENDING_APPROVAL`), may be null.</ResponseField>
+    <ResponseField name="submission" type="object">Associated questionnaire submission, if any.</ResponseField>
+    <ResponseField name="details" type="object[]">Asset allocation breakdown for the portfolio.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp.</ResponseField>
+    <ResponseField name="updatedAt" type="string">ISO 8601 timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="total" type="number" required>Total count of matching portfolios.</ResponseField>
+<ResponseField name="page" type="number" required>Current page.</ResponseField>
+<ResponseField name="limit" type="number" required>Page size.</ResponseField>
+<ResponseField name="totalPages" type="number" required>Total number of pages.</ResponseField>
+
+---
+
+### GET /v1/portfolios/:id
+
+Retrieve a single portfolio by ID, including full asset allocation details and questionnaire submission.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/portfolios/PTF-00000001" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>
+  Portfolio ID (e.g., `PTF-00000001`).
+</ParamField>
+
+#### Query parameters
+
+<ParamField query="userId" type="string">
+  TR only. Client user ID to scope the request.
+</ParamField>
+
+#### Response
+
+Single portfolio object. The `details` array contains each asset allocation line:
+
+<ResponseField name="details" type="object[]">
+  <Expandable title="detail properties">
+    <ResponseField name="id" type="string">Detail line ID.</ResponseField>
+    <ResponseField name="lineId" type="number">Line number within the portfolio.</ResponseField>
+    <ResponseField name="name" type="string">Asset class label (e.g., `US Equities`).</ResponseField>
+    <ResponseField name="instrumentId" type="string">Linked instrument ID.</ResponseField>
+    <ResponseField name="instrumentName" type="string">Instrument display name.</ResponseField>
+    <ResponseField name="assetClass" type="string">Asset class (e.g., `Equities`, `Bonds`).</ResponseField>
+    <ResponseField name="market" type="string">Market code (e.g., `US`, `SG`).</ResponseField>
+    <ResponseField name="weightage" type="number">Target allocation as a decimal (e.g., `0.535` = 53.5%).</ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Error responses
+
+| Status | Meaning |
+|--------|---------|
+| 403 | Portfolio belongs to a different user |
+| 404 | Portfolio not found |
+
+---
+
+### PATCH /v1/portfolios/my-strategy
+
+Update the risk level of the authenticated user's primary portfolio. This changes the portfolio's strategy in-place.
+
+**Authentication**: JWT required
+
+```bash
+curl -X PATCH http://localhost:3001/v1/portfolios/my-strategy \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{"riskLevel": "HIGH"}'
+```
+
+#### Request body
+
+<ParamField body="riskLevel" type="string" required>
+  New risk level for the portfolio. One of: `HIGH`, `MEDIUM`, `LOW`.
+</ParamField>
+
+#### Response
+
+The updated portfolio object with the new `riskLevel` applied.
+
+---
+
+### PATCH /v1/portfolios/:id
+
+Update the name and/or description of a specific portfolio.
+
+**Authentication**: JWT required
+
+```bash
+curl -X PATCH http://localhost:3001/v1/portfolios/PTF-00000001 \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Growth Portfolio", "description": "Focused on long-term capital appreciation"}'
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>
+  Portfolio ID.
+</ParamField>
+
+#### Request body
+
+<ParamField body="name" type="string">
+  New portfolio name.
+</ParamField>
+
+<ParamField body="description" type="string">
+  New portfolio description.
+</ParamField>
+
+<ParamField body="riskLevel" type="string">
+  New risk level: `HIGH`, `MEDIUM`, or `LOW`.
+</ParamField>
+
+---
+
+### DELETE /v1/portfolios/:id
+
+Soft-delete a portfolio. The portfolio record is retained in the database but marked as deleted.
+
+**Authentication**: JWT required
+
+```bash
+curl -X DELETE http://localhost:3001/v1/portfolios/PTF-00000001 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>
+  Portfolio ID to delete.
+</ParamField>
+
+#### Response
+
+`204 No Content`.
+
+---
+
+## Portfolio templates
+
+Portfolio templates represent pre-configured investment strategies (model portfolios) that clients can adopt. They define the asset allocation, risk level, and fund composition for each available strategy.
+
+### GET /v1/portfolio-templates
+
+List all available portfolio strategy templates.
+
+**Authentication**: JWT required
+
+```bash
+curl http://localhost:3001/v1/portfolio-templates \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### GET /v1/portfolio-templates/:id
+
+Retrieve the details of a single portfolio template, including its full asset allocation.
+
+**Authentication**: JWT required
+
+```bash
+curl http://localhost:3001/v1/portfolio-templates/TPL-00000001 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="id" type="string" required>
+  Portfolio template ID.
+</ParamField>
+
+---
+
+## Questionnaires
+
+The risk profiling questionnaire is used during onboarding and strategy changes. Clients (or TRs on their behalf) answer a set of questions. The system scores their answers and assigns a risk profile (`HIGH`, `MEDIUM`, or `LOW`) which maps to a recommended portfolio strategy.
+
+<Warning>
+Each user is limited to a maximum of 3 questionnaire submissions. Subsequent submissions overwrite the risk profile recommendation.
+</Warning>
+
+### GET /v1/questionnaires/:questionGoal/questions
+
+Retrieve all questions for a given questionnaire goal.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/questionnaires/RISK_PROFILE/questions" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="questionGoal" type="string" required>
+  The questionnaire goal type. Use `RISK_PROFILE` for the standard risk profiling questionnaire.
+</ParamField>
+
+#### Response
+
+Array of question objects:
+
+<ResponseField name="id" type="string">Question ID (e.g., `QST-00000001`).</ResponseField>
+<ResponseField name="questionGoal" type="string">Goal this question belongs to.</ResponseField>
+<ResponseField name="questionName" type="string">Short label for the question.</ResponseField>
+<ResponseField name="questionDetail" type="string">Full question text shown to the user.</ResponseField>
+<ResponseField name="options" type="object[]">Array of answer options with their values and score weights.</ResponseField>
+<ResponseField name="order" type="number">Display order within the questionnaire.</ResponseField>
+
+---
+
+### POST /v1/questionnaires/:questionGoal/submissions
+
+Submit answers for a questionnaire. The backend scores the answers and derives a risk profile and recommended portfolio.
+
+**Authentication**: JWT required
+
+```bash
+curl -X POST "http://localhost:3001/v1/questionnaires/RISK_PROFILE/submissions" \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "answers": [
+      {"questionId": "QST-00000001", "answer": "capital_growth"},
+      {"questionId": "QST-00000002", "answer": "5_to_10_years"},
+      {"questionId": "QST-00000003", "answer": "high_risk_tolerance"}
+    ],
+    "goalSetup": {
+      "targetAmount": 100000,
+      "investmentHorizon": 10
+    }
+  }'
+```
+
+#### Path parameters
+
+<ParamField path="questionGoal" type="string" required>
+  The questionnaire goal. Use `RISK_PROFILE` for risk profiling.
+</ParamField>
+
+#### Request body
+
+<ParamField body="answers" type="object[]" required>
+  Array of question-answer pairs.
+  <Expandable title="answer properties">
+    <ParamField body="answers[].questionId" type="string" required>
+      The question ID from `GET /v1/questionnaires/:questionGoal/questions`.
+    </ParamField>
+    <ParamField body="answers[].answer" type="string" required>
+      The selected answer value.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="goalSetup" type="object">
+  Optional investment goal parameters captured during the goal-setup wizard step.
+</ParamField>
+
+#### Response
+
+<ResponseField name="id" type="string">Submission ID (e.g., `SUB-00000001`).</ResponseField>
+<ResponseField name="questionGoal" type="string">The questionnaire goal.</ResponseField>
+<ResponseField name="userId" type="string">Submitting user ID.</ResponseField>
+<ResponseField name="answerDate" type="string">ISO 8601 submission timestamp.</ResponseField>
+<ResponseField name="riskProfile" type="object">
+  Derived risk profile.
+  <Expandable title="riskProfile properties">
+    <ResponseField name="riskLevel" type="string">Computed risk level: `HIGH`, `MEDIUM`, or `LOW`.</ResponseField>
+    <ResponseField name="riskProfileType" type="string">Risk profile classification label.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="portfolio" type="object">Recommended portfolio template matching the risk profile, may be null.</ResponseField>
+
+---
+
+### GET /v1/questionnaires/:questionGoal/submissions
+
+List all submissions made by the authenticated user for a given questionnaire goal.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/questionnaires/RISK_PROFILE/submissions?page=1&limit=10" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="questionGoal" type="string" required>
+  The questionnaire goal.
+</ParamField>
+
+#### Query parameters
+
+<ParamField query="userId" type="string">
+  TR only. Fetch submissions for a specific client.
+</ParamField>
+
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="10">Results per page.</ParamField>
+
+---
+
+### GET /v1/questionnaires/:questionGoal/submissions/:id
+
+Retrieve a specific submission by ID. Clients can only retrieve their own submissions; staff roles can retrieve any.
+
+**Authentication**: JWT required
+
+```bash
+curl "http://localhost:3001/v1/questionnaires/RISK_PROFILE/submissions/SUB-00000001" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Path parameters
+
+<ParamField path="questionGoal" type="string" required>The questionnaire goal.</ParamField>
+<ParamField path="id" type="string" required>Submission ID.</ParamField>
+
+---
+
+## Instruments
+
+### GET /v1/instruments
+
+List all instruments (funds, ETFs, bonds) available on the platform.
+
+**Authentication**: JWT required
+
+```bash
+curl http://localhost:3001/v1/instruments \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+#### Response
+
+Array of instrument objects:
+
+<ResponseField name="id" type="string">Instrument ID.</ResponseField>
+<ResponseField name="name" type="string">Instrument display name (e.g., `VANGUARD AUST SHARES IDX ETF`).</ResponseField>
+<ResponseField name="code" type="string">Instrument code used in order placement.</ResponseField>
+<ResponseField name="assetClass" type="string">Asset class (e.g., `Equities`, `Bonds`, `Cash`).</ResponseField>
+<ResponseField name="market" type="string">Market/exchange code.</ResponseField>
+<ResponseField name="currency" type="string">Trading currency (ISO 4217).</ResponseField>

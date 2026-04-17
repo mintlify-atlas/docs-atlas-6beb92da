@@ -1,0 +1,148 @@
+---
+title: 'External integrations and adapter configuration'
+description: 'Environment variables and config for FNZ/Tapico trading, SUS8 Redshift sync, Keycloak Admin and OIDC paths, iZeno Onboarding, JWT, logging, and file storage.'
+---
+
+`ms-robo-admin` connects to five external systems through typed adapter modules in `src/infrastructure/external/`. Each adapter is registered as a NestJS provider and injected via Symbol tokens defined in `src/shared/constants/injection-tokens.ts`. Configuration is validated at startup by NestJS `ConfigModule` — missing required variables cause the process to exit.
+
+## FNZ / Tapico trading
+
+FNZ (branded as Tapico in the API surface) handles order execution and settlement for all client portfolios. The adapter lives at `src/infrastructure/external/fnz/` and exposes two implementations: a live HTTP adapter (`fnz-order.adapter.ts`) and a mock (`mock-fnz-order.adapter.ts`).
+
+### Mock mode
+
+When `FNZ_USE_MOCK=true` (the default), all order calls are handled by the mock adapter, which returns success responses without touching the Tapico API. This is the expected state in local development and UAT until live trading is enabled.
+
+<Warning>
+Set `FNZ_USE_MOCK=false` only in environments that have valid FNZ credentials and are authorised to submit real orders. Enabling live mode with invalid credentials causes order failures that appear in client portfolios.
+</Warning>
+
+### Order status polling
+
+The adapter includes an optional cron job that polls Tapico for order status updates. It is disabled by default.
+
+| Variable | Default | Description |
+|---|---|---|
+| `FNZ_AUTH_URL` | `https://api.sandbox.tapico.io/v1/oauth/token` | OAuth2 token endpoint |
+| `FNZ_RESOURCE_URL` | `https://api.sandbox.tapico.io` | Base URL for order and settlement APIs |
+| `FNZ_CLIENT_ID` | — | OAuth2 client ID |
+| `FNZ_CLIENT_SECRET` | — | OAuth2 client secret |
+| `FNZ_SCOPE` | `open-platform` | OAuth2 scope |
+| `FNZ_TIMEOUT` | `30000` | Request timeout in milliseconds (minimum 1000) |
+| `FNZ_USE_MOCK` | `true` | Route all order calls to the mock adapter |
+| `FNZ_ORDER_STATUS_POLL_CRON` | `0 */5 * * * *` | Cron expression for status polling (every 5 minutes) |
+| `FNZ_ORDER_STATUS_POLL_ENABLED` | `false` | Enable the polling cron job |
+
+## SUS8 Redshift datalake sync
+
+SUS8 is the internal UOB datalake hosted on AWS Redshift Serverless. `ms-robo-admin` syncs users from the `utrade_robo` schema in Redshift into the local `users`, `clients`, and `accounts` tables using a chunked pipeline. The sync also populates the import staging tables (`imp_*`) as an intermediate step.
+
+### Automatic sync
+
+The sync runs on a cron schedule when `SUS8_SYNC_ENABLED=true`. The UAT environment uses the cron expression `0 0 2 * * *` — 2:00 AM Singapore time (TZ is set to `Asia/Singapore` in all Kubernetes deployments).
+
+### Manual sync
+
+Run a one-shot sync from the command line, optionally limiting the number of records processed:
+
+```bash
+cd ms-robo-admin
+bun run sync:sus8 -- --limit 10
+```
+
+Omit `--limit` to sync all pending records.
+
+| Variable | Default | Description |
+|---|---|---|
+| `SUS8_REDSHIFT_HOST` | — | Redshift Serverless endpoint hostname |
+| `SUS8_REDSHIFT_PORT` | `5439` | Redshift port |
+| `SUS8_REDSHIFT_DATABASE` | `dev` | Redshift database name |
+| `SUS8_REDSHIFT_USER` | — | Redshift service account username |
+| `SUS8_REDSHIFT_PASSWORD` | — | Redshift service account password |
+| `SUS8_REDSHIFT_SCHEMA` | `utrade_robo` | Source schema inside Redshift |
+| `SUS8_REDSHIFT_SSL` | `true` | Require SSL for Redshift connection |
+| `SUS8_SYNC_CRON` | `0 0 2 * * *` | Cron schedule (2 AM daily) |
+| `SUS8_SYNC_ENABLED` | `false` | Enable the automatic sync cron |
+| `SUS8_SYNC_CHUNK_SIZE` | `1000` | Records processed per batch |
+| `SUS8_DEFAULT_PASSWORD` | — | Temporary password assigned to newly synced users |
+
+<Note>
+`SUS8_SYNC_ENABLED` defaults to `false` in every environment including UAT. Enable it deliberately once the Redshift connection details have been verified and the default password policy has been reviewed.
+</Note>
+
+## Keycloak
+
+Keycloak handles identity for both services but through different integration paths.
+
+<Tabs>
+  <Tab title="ms-robo-admin (Admin API)">
+    `ms-robo-admin` uses the **Keycloak Admin REST API** to provision users, assign realm roles, and manage user lifecycle (create, update, disable). The adapter at `src/infrastructure/external/keycloak/` authenticates with a service account using a client credentials grant.
+
+    | Variable | Description |
+    |---|---|
+    | `KEYCLOAK_ADMIN_BASE_URL` | Base URL of the Keycloak server (e.g., `https://keycloak-admin-rhsso.aws001nonprod.uobkayhian.com`) |
+    | `KEYCLOAK_ADMIN_REALM` | Target realm (UAT: `uobkh`) |
+    | `KEYCLOAK_ADMIN_CLIENT_ID` | Service account client ID (UAT: `robo`) |
+    | `KEYCLOAK_ADMIN_CLIENT_SECRET` | Service account client secret |
+    | `KEYCLOAK_ADMIN_TOKEN_ENDPOINT` | Full token URL: `{base}/realms/{realm}/protocol/openid-connect/token` |
+
+    Local Keycloak runs at `http://localhost:8080` via Docker Compose (`quay.io/keycloak/keycloak:26.2`).
+  </Tab>
+
+  <Tab title="ms-robo-web (Client API)">
+    `ms-robo-web` uses Keycloak as an **OIDC identity provider** via the PKCE authorization code flow. The frontend generates a `codeVerifier`/`codeChallenge` pair, redirects the user to the Keycloak authorize endpoint, then sends the authorization code and verifier to `POST /v1/auth/keycloak/callback`. The backend exchanges these with Keycloak and returns platform JWT tokens to the client.
+
+    The Keycloak OIDC variables are consumed by `ms-robo-web`, not `ms-robo-admin`. See the Auth section for the full flow.
+  </Tab>
+</Tabs>
+
+## Onboarding API (iZeno)
+
+New client users are registered through the iZeno Onboarding API, an external service operated by iZeno. `ms-robo-admin` calls this service when creating a client account via the admin portal. The adapter lives at `src/infrastructure/external/onboarding/`.
+
+| Variable | Description |
+|---|---|
+| `ONBOARDING_API_BASE_URL` | Base URL of the iZeno service (UAT: `https://registration-service.aws001nonprod.uobkayhian.com`) |
+| `ONBOARDING_API_CLIENT_ID` | OAuth2 client ID for the onboarding service |
+| `ONBOARDING_API_CLIENT_SECRET` | OAuth2 client secret |
+| `ONBOARDING_API_TOKEN_ENDPOINT` | Token endpoint — shares the same Keycloak realm as admin in UAT |
+
+## Supporting adapters
+
+The following adapters handle infrastructure concerns within `ms-robo-admin` and require no external service configuration.
+
+<AccordionGroup>
+  <Accordion title="Pino logging">
+    Structured JSON logging via Pino (`src/infrastructure/logger/`). In production (`LOG_PRETTY=false`) logs are emitted as newline-delimited JSON for log aggregation. In local development, set `LOG_PRETTY=true` for human-readable output.
+
+    | Variable | Default | Description |
+    |---|---|---|
+    | `LOG_LEVEL` | `info` | Pino log level: `trace`, `debug`, `info`, `warn`, `error`, `fatal` |
+    | `LOG_PRETTY` | `false` | Enable pretty-printed log output |
+  </Accordion>
+
+  <Accordion title="File storage">
+    File attachments (uploaded through `POST /v1/files/upload`) are stored as base64-encoded text in the `file_attachments` table. The adapter at `src/infrastructure/external/database-storage/` enforces a configurable size limit per upload.
+
+    | Variable | Default | Description |
+    |---|---|---|
+    | `DATABASE_STORAGE_MAX_SIZE` | `5242880` | Maximum upload size in bytes (default 5 MB) |
+
+    There is no external object store dependency — files live entirely in PostgreSQL.
+  </Accordion>
+
+  <Accordion title="bcrypt password hashing">
+    The `src/infrastructure/external/bcrypt/` adapter wraps the `bcrypt` library for password hashing and comparison. It is used when creating or updating users with username/password credentials. No configuration variables — the cost factor is set in code.
+  </Accordion>
+
+  <Accordion title="JWT token management">
+    The `src/infrastructure/external/jwt/` adapter handles issuing and verifying access tokens and refresh tokens. Both secrets must be at least 32 characters.
+
+    | Variable | Description |
+    |---|---|
+    | `AUTH_JWT_SECRET` | Signing key for access tokens |
+    | `AUTH_JWT_TOKEN_EXPIRES_IN` | Access token TTL (e.g., `1d`) |
+    | `AUTH_REFRESH_SECRET` | Signing key for refresh tokens |
+    | `AUTH_REFRESH_TOKEN_EXPIRES_IN` | Refresh token TTL (e.g., `30d`) |
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,260 @@
+---
+title: 'Database schema ownership and entity model'
+description: 'How ms-robo-admin owns all 52 TypeORM entities and migrations, how ms-robo-web consumes them, and the step-by-step workflow for propagating schema changes.'
+---
+
+`ms-robo-admin` is the **sole owner** of the `uob_portal` database schema. All TypeORM entity definitions, migration files, and seed scripts live exclusively in that service. `ms-robo-web` is a schema consumer — its `entities/` directory is a copy pushed from `ms-robo-admin` via a sync script and must never be edited by hand or used to generate migrations.
+
+## Ownership model
+
+```
+ms-robo-admin (Schema Owner)          ms-robo-web (Consumer)
+├── entities/  ◄── source of truth    ├── entities/  ◄── synced copy
+├── migrations/  (13 files)           │   (no migrations ever)
+├── seeds/                            └── repositories/
+└── repositories/
+```
+
+<Warning>
+Never edit entity files inside `ms-robo-web/src/infrastructure/persistence/entities/` directly. Never run `bun run db:generate` or `bun run db:migrate` from `ms-robo-web`. All schema changes begin and end in `ms-robo-admin`.
+</Warning>
+
+## Schema propagation workflow
+
+Use this workflow whenever you add a new entity, alter a column, or change a relationship.
+
+<Steps>
+  <Step title="Edit the entity in ms-robo-admin">
+    Add or modify the TypeORM entity file under `ms-robo-admin/src/infrastructure/persistence/entities/`. Use the appropriate subdirectory — `account/`, `portfolio/`, `identity/`, etc.
+
+    ```bash
+    # example: editing the portfolio entity
+    # ms-robo-admin/src/infrastructure/persistence/entities/portfolio/portfolio.entity.ts
+    ```
+  </Step>
+
+  <Step title="Generate the migration">
+    TypeORM diffs your entity definitions against the current database schema and writes a new migration file into `src/infrastructure/persistence/migrations/`.
+
+    ```bash
+    cd ms-robo-admin
+    bun run db:generate
+    ```
+  </Step>
+
+  <Step title="Apply the migration to the local database">
+    Run all pending migrations against the local PostgreSQL instance (port 5433, database `uob_portal`).
+
+    ```bash
+    bun run db:migrate
+    ```
+
+    To undo the last applied migration during development:
+
+    ```bash
+    bun run db:revert
+    ```
+  </Step>
+
+  <Step title="Sync entities to ms-robo-web">
+    Push the updated entity files from `ms-robo-admin` into `ms-robo-web`. This script copies files and does not touch migrations.
+
+    ```bash
+    bun run db:sync
+    ```
+  </Step>
+
+  <Step title="Verify the sync">
+    Run the dry-run check to confirm that the two `entities/` directories are identical. A clean output means no drift.
+
+    ```bash
+    bun run db:sync:check
+    ```
+  </Step>
+</Steps>
+
+If `db:sync:check` reports differences, re-run `db:sync`. Do not manually reconcile the files.
+
+## Seeding reference data
+
+Initial seed data (roles, instruments, system parameters, questionnaire questions, etc.) is loaded via dedicated seed scripts. Run them once after the first `db:migrate` on a fresh database.
+
+```bash
+cd ms-robo-admin
+bun run seed:run
+```
+
+Seed modules are organised by domain under `src/infrastructure/persistence/seeds/`:
+
+| Seed directory | Contents |
+|---|---|
+| `authorization/` | Roles and role-permissions |
+| `user/` | Default admin user accounts |
+| `instrument/` | Securities, currencies |
+| `portfolio/` | Portfolio templates |
+| `question/` | Questionnaire questions and answers |
+| `organization/` | Companies, branches, agents |
+| `field-property/` | UI field configuration |
+| `profile-number/` | Sequence generators |
+| `public-holiday/` | Public holiday calendar |
+
+## Entity catalogue
+
+The 52 TypeORM entity files span 14 subdirectories under `src/infrastructure/persistence/entities/`. They are organised below by functional category.
+
+### Core identity
+
+| Entity file | Table | Purpose |
+|---|---|---|
+| `identity/user.entity.ts` | `users` | Platform user accounts (admin and client) |
+| `identity/session.entity.ts` | `sessions` | Active JWT refresh token sessions |
+| `authorization/role.entity.ts` | `roles` | Role definitions (SYSTEM_ADMINISTRATOR, BACK_OFFICE_USER, etc.) |
+| `authorization/role-permission.entity.ts` | `role_permissions` | Permission assignments to roles |
+
+### Account and organisation
+
+| Entity file | Table | Purpose |
+|---|---|---|
+| `account/account.entity.ts` | `accounts` | Trading accounts with bank details |
+| `account/account-group.entity.ts` | `account_groups` | Logical grouping of accounts |
+| `account/client.entity.ts` | `clients` | Client profile records |
+| `account/client-account.entity.ts` | `client_accounts` | Many-to-many join between clients and accounts |
+| `account/account-request.entity.ts` | `account_requests` | Funding, withdrawal, and portfolio change requests |
+| `organization/company.entity.ts` | `companies` | Broker companies |
+| `organization/branch.entity.ts` | `branches` | Company branches |
+| `organization/agent.entity.ts` | `agents` | Agents within branches |
+| `organization/contact.entity.ts` | `contacts` | Contact records linked to users |
+| `organization/tr-code.entity.ts` | `tr_codes` | Trading representative codes |
+| `organization/tr-code-account.entity.ts` | `tr_code_accounts` | TR code ↔ account assignments |
+| `organization/tr-code-client.entity.ts` | `tr_code_clients` | TR code ↔ client assignments |
+
+### Portfolio
+
+| Entity file | Table | Purpose |
+|---|---|---|
+| `portfolio/portfolio.entity.ts` | `portfolios` | Client investment portfolios (linked via `user_id`) |
+| `portfolio/portfolio-detail.entity.ts` | `portfolio_details` | Instrument allocation lines within a portfolio |
+| `portfolio/goal.entity.ts` | `goals` | Investment goal for a portfolio (1:1) |
+
+### Questionnaire
+
+| Entity file | Table | Purpose |
+|---|---|---|
+| `questionnaire/question.entity.ts` | `questions` | Risk-profile questionnaire questions |
+| `questionnaire/question-answer.entity.ts` | `question_answers` | Possible answers per question |
+| `questionnaire/question-submission.entity.ts` | `question_submissions` | Client questionnaire submissions |
+| `questionnaire/question-condition.entity.ts` | `question_conditions` | Conditional display rules for questions |
+
+### Instrument
+
+| Entity file | Table | Purpose |
+|---|---|---|
+| `instrument/instrument.entity.ts` | `instruments` | Securities (equities, bonds, funds) |
+| `instrument/currency.entity.ts` | `currencies` | Supported currency definitions |
+| `instrument/price.entity.ts` | `prices` | Instrument price history |
+
+### Holdings
+
+| Entity file | Table | Purpose |
+|---|---|---|
+| `holdings/account-holding.entity.ts` | `account_holdings` | Current instrument positions per account |
+| `holdings/account-movement.entity.ts` | `account_movements` | Transaction history |
+| `holdings/account-balance.entity.ts` | `account_balances` | Cash balances per account and currency |
+| `holdings/currency-rate.entity.ts` | `currency_rates` | FX rates between currency pairs |
+| `holdings/corporate-action.entity.ts` | `corporate_actions` | Dividends, splits, and other corporate events |
+
+### Files
+
+| Entity file | Table | Purpose |
+|---|---|---|
+| `files/file-attachment.entity.ts` | `file_attachments` | Binary file storage (stored as base64 text in DB) |
+
+### Reference
+
+| Entity file | Table | Purpose |
+|---|---|---|
+| `reference/country.entity.ts` | `countries` | Country codes and names |
+| `reference/public-holiday.entity.ts` | `public_holidays` | Public holiday calendar by country and year |
+
+### System
+
+| Entity file | Table | Purpose |
+|---|---|---|
+| `system/parameter.entity.ts` | `system_parameters` | Runtime configuration key-value pairs |
+| `system/profile-number.entity.ts` | `profile_numbers` | Auto-increment sequence generators for IDs |
+| `system/field-property.entity.ts` | `field_properties` | UI field visibility and behaviour configuration |
+| `system/audit-log.entity.ts` | `audit_logs` | Admin action audit trail |
+
+### Import staging (11 entities)
+
+These staging tables receive raw data from the SUS8 Redshift import pipeline before it is reconciled into the main tables.
+
+| Entity file | Table |
+|---|---|
+| `import/imp-account.entity.ts` | `imp_accounts` |
+| `import/imp-client.entity.ts` | `imp_clients` |
+| `import/imp-agent.entity.ts` | `imp_agents` |
+| `import/imp-acc-holding.entity.ts` | `imp_acc_holdings` |
+| `import/imp-acc-movement.entity.ts` | `imp_acc_movements` |
+| `import/imp-acc-balance.entity.ts` | `imp_acc_balances` |
+| `import/imp-instrument.entity.ts` | `imp_instruments` |
+| `import/imp-exch-rate.entity.ts` | `imp_exch_rates` |
+| `import/imp-acc-settlement.entity.ts` | `imp_acc_settlements` |
+| `import/import-batch.entity.ts` | `import_batches` |
+| `import/import-batch-detail.entity.ts` | `import_batch_details` |
+
+## Entity relationships
+
+The following diagram summarises the key foreign-key relationships across domains.
+
+```
+User ──< Session
+User ──< RolePermission >── Role
+Client ──< ClientAccount >── Account
+Account ──< AccountGroup
+Account ──< AccountHolding
+Account ──< AccountMovement
+Account ──< AccountBalance
+User ──< Portfolio                 (portfolio.user_id)
+Company ──< Portfolio              (portfolio.company_id)
+Agent ──? Portfolio                (portfolio.agent_id, nullable)
+Portfolio ──< PortfolioDetail
+Portfolio ── Goal                  (1:1)
+Portfolio ──? QuestionSubmission   (nullable FK)
+QuestionSubmission ──< QuestionAnswer >── Question
+Question ──< QuestionCondition
+Account ──< AccountRequest
+AccountRequest ──? FileAttachment
+Company ──< Branch
+Branch ──< Agent
+Agent ──< TrCode
+TrCode ──< TrCodeAccount >── Account
+TrCode ──< TrCodeClient >── Client
+Instrument ──< Price
+Currency ──< CurrencyRate
+ImportBatch ──< ImportBatchDetail
+```
+
+<Note>
+`Portfolio` links to `User` via `user_id`, not to `Account`. This diverges from the original UTrade Robo handover spec. The change was introduced in migration `1773047833410-AddUserIdStatusIsPrimaryToPortfolio`. One user may have many portfolios; exactly one has `is_primary = true`.
+</Note>
+
+## Migration reference
+
+All 13 migration files live in `ms-robo-admin/src/infrastructure/persistence/migrations/`. They are applied in timestamp order by `bun run db:migrate`.
+
+| # | Migration file | Schema change |
+|---|---|---|
+| 1 | `1764699128757-migration.ts` | Initial schema — core tables for users, accounts, clients, portfolios, questionnaires, instruments, holdings, and organization hierarchy |
+| 2 | `1764701694294-migration.ts` | Add `company_id` and `contact_id` columns to `users`; backfill existing rows |
+| 3 | `1764707702177-migration.ts` | Add unique constraint on `question_submissions.portfolio_id` |
+| 4 | `1764732975783-migration.ts` | Rename `users.role` to `users.role_id`; extract `roles` table with `role_permissions` |
+| 5 | `1766668366857-migration.ts` | Expand `instruments.asset_class` and `instruments.market` enums with new values |
+| 6 | `1766672273158-migration.ts` | Create `goals` table (investment purpose, target amount, target year, withdrawal method) |
+| 7 | `1769416876981-migration.ts` | Create `file_attachments` table with unique index on `key` |
+| 8 | `1772142966005-migration.ts` | Create `tr_codes` and `tr_code_accounts` junction tables |
+| 9 | `1772184717430-migration.ts` | Create `public_holidays` table with country/year/date indexes |
+| 10 | `1773047833410-AddUserIdStatusIsPrimaryToPortfolio.ts` | Add `user_id`, `status`, and `is_primary` columns to `portfolios` |
+| 11 | `1773304590852-migration.ts` | Add `keycloak_subject_id` column to `users` with unique constraint |
+| 12 | `1773827399990-migration.ts` | Create `tr_code_clients` junction table; add `bank_account_number` and `bank_name` to `accounts` |
+| 13 | `1774250955347-migration.ts` | Add `email` and `reference_id` columns to `users` with indexes |

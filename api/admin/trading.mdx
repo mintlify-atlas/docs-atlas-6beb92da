@@ -1,0 +1,495 @@
+---
+title: 'Admin API — Trading, Holdings & TR Operations'
+description: 'Admin API trading endpoints: place orders, view admin holdings and valuations, TR account and request routes, file upload and download, and health check.'
+---
+
+This page documents the trading surface of the Admin API. It covers client-scoped **order placement** (the `/v1/orders` controller), **admin-wide order management** (`/v1/admin/orders`), **holdings and valuation** (`/v1/admin/holdings`, `/v1/admin/valuation`), **Trading Representative (TR) operations** (`/v1/tr`), and **file uploads** (`/v1/files`). All endpoints require `Authorization: Bearer <accessToken>` unless noted otherwise.
+
+**Base URL (development):** `http://localhost:3002`
+
+---
+
+## Orders (client-scoped)
+
+The `/v1/orders` controller operates on the authenticated user's own accounts. It is accessible to all authenticated admin users but filters results to the current user's scope.
+
+### POST /v1/orders
+
+Place a buy or sell order for an instrument.
+
+#### Request body
+
+<ParamField body="accountId" type="string" required>
+  The account from which to place the order (e.g. `ACC-00000001`).
+</ParamField>
+
+<ParamField body="instrumentId" type="string" required>
+  Instrument to trade (e.g. `INS-00000001`).
+</ParamField>
+
+<ParamField body="side" type="string" required>
+  Order direction: `buy` or `sell`.
+</ParamField>
+
+<ParamField body="orderType" type="string" required>
+  Order type: `market` or `limit`.
+</ParamField>
+
+<ParamField body="quantity" type="number" required>
+  Number of units. Must be a positive integer (minimum 1).
+</ParamField>
+
+<ParamField body="limitPrice" type="number">
+  Limit price per unit. Required when `orderType` is `limit`. Up to 4 decimal places.
+</ParamField>
+
+#### Response
+
+<ResponseField name="orderId" type="string">Internal order ID.</ResponseField>
+<ResponseField name="transRefCode" type="string">External transaction reference code from the trading system.</ResponseField>
+<ResponseField name="status" type="string">Initial order status (e.g. `pending`, `submitted`).</ResponseField>
+<ResponseField name="message" type="string">Confirmation message.</ResponseField>
+<ResponseField name="settlementDate" type="string">Expected settlement date (ISO 8601), nullable.</ResponseField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/orders \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accountId": "ACC-00000001",
+    "instrumentId": "INS-00000001",
+    "side": "buy",
+    "orderType": "market",
+    "quantity": 100
+  }'
+```
+
+**201 Created — example response**
+
+```json
+{
+  "orderId": "ORD-00000001",
+  "transRefCode": "TXN-20240115-001",
+  "status": "submitted",
+  "message": "Order placed successfully",
+  "settlementDate": "2024-01-17T00:00:00.000Z"
+}
+```
+
+**Common error responses**
+
+| Status | Description |
+|--------|-------------|
+| `400 Bad Request` | Validation error (e.g. missing `limitPrice` for a limit order). |
+| `422 Unprocessable Entity` | Business rule violation (e.g. insufficient balance). |
+
+---
+
+### GET /v1/orders
+
+List orders belonging to the authenticated user, with optional filters.
+
+#### Query parameters
+
+<ParamField query="accountId" type="string">Filter by account ID.</ParamField>
+<ParamField query="instrumentId" type="string">Filter by instrument ID.</ParamField>
+<ParamField query="status" type="string">Filter by order status (e.g. `pending`, `filled`, `cancelled`).</ParamField>
+<ParamField query="side" type="string">Filter by side: `buy` or `sell`.</ParamField>
+<ParamField query="fromDate" type="string">Start date filter (ISO format).</ParamField>
+<ParamField query="toDate" type="string">End date filter (ISO format).</ParamField>
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="20">Records per page.</ParamField>
+<ParamField query="sortBy" type="string">Sort column.</ParamField>
+<ParamField query="sortOrder" type="string" default="DESC">Sort direction.</ParamField>
+
+```bash cURL
+curl "http://localhost:3002/v1/orders?side=buy&status=filled&page=1" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+## Admin Orders
+
+The `/v1/admin/orders` controller provides a cross-account view of all orders in the system, intended for back-office and administrator users.
+
+### GET /v1/admin/orders
+
+List all orders across all accounts.
+
+<Note>
+Requires `orders:read` permission.
+</Note>
+
+#### Query parameters
+
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="20">Records per page.</ParamField>
+<ParamField query="sortBy" type="string">Sort column.</ParamField>
+<ParamField query="sortOrder" type="string" default="DESC">Sort direction.</ParamField>
+<ParamField query="accountId" type="string">Filter by account ID.</ParamField>
+<ParamField query="instrumentId" type="string">Filter by instrument ID.</ParamField>
+<ParamField query="transStatus" type="string">Filter by transaction status.</ParamField>
+<ParamField query="transCode" type="string">Filter by transaction code (e.g. `BUY`, `SELL`).</ParamField>
+<ParamField query="fromDate" type="string">Start date filter (ISO format).</ParamField>
+<ParamField query="toDate" type="string">End date filter (ISO format).</ParamField>
+
+#### Response
+
+<ResponseField name="items" type="array" required>
+  Array of order records.
+  <Expandable title="order item">
+    <ResponseField name="id" type="string">Order ID.</ResponseField>
+    <ResponseField name="accountId" type="string">Account ID.</ResponseField>
+    <ResponseField name="accountName" type="string">Account display name.</ResponseField>
+    <ResponseField name="instrumentId" type="string">Instrument ID.</ResponseField>
+    <ResponseField name="instrumentName" type="string">Instrument name.</ResponseField>
+    <ResponseField name="instrumentSymbol" type="string">Instrument ticker/symbol.</ResponseField>
+    <ResponseField name="transCode" type="string">Transaction code (`BUY` or `SELL`).</ResponseField>
+    <ResponseField name="transStatus" type="string">Current status.</ResponseField>
+    <ResponseField name="side" type="string">Order side.</ResponseField>
+    <ResponseField name="orderType" type="string">Order type.</ResponseField>
+    <ResponseField name="quantity" type="number">Ordered quantity.</ResponseField>
+    <ResponseField name="fPrice" type="number">Fill price.</ResponseField>
+    <ResponseField name="fAmount" type="number">Fill amount.</ResponseField>
+    <ResponseField name="fCurrency" type="string">Foreign currency.</ResponseField>
+    <ResponseField name="bCurrency" type="string">Base currency.</ResponseField>
+    <ResponseField name="fbCurrRate" type="number">FX rate between foreign and base currency.</ResponseField>
+    <ResponseField name="transRefCode" type="string">External transaction reference code.</ResponseField>
+    <ResponseField name="eTransCode" type="string">Exchange transaction code from the trading system.</ResponseField>
+    <ResponseField name="lastBizDate" type="string">Order date.</ResponseField>
+    <ResponseField name="settlementDate" type="string">Settlement date.</ResponseField>
+    <ResponseField name="description" type="string">Order description.</ResponseField>
+    <ResponseField name="remarks" type="string">Internal remarks.</ResponseField>
+    <ResponseField name="createdAt" type="string">Creation timestamp.</ResponseField>
+    <ResponseField name="updatedAt" type="string">Last-updated timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="total" type="number">Total matching records.</ResponseField>
+<ResponseField name="page" type="number">Current page.</ResponseField>
+<ResponseField name="limit" type="number">Records per page.</ResponseField>
+<ResponseField name="totalPages" type="number">Total pages.</ResponseField>
+
+```bash cURL
+curl "http://localhost:3002/v1/admin/orders?transStatus=filled&page=1&limit=20" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### POST /v1/admin/orders/reconcile
+
+Manually trigger order reconciliation against the external trading system (FNZ/Tapico). The system checks pending orders and updates their statuses based on the exchange response.
+
+<Note>
+Requires `orders:manage` permission.
+</Note>
+
+No request body.
+
+#### Response
+
+<ResponseField name="totalProcessed" type="number">Number of orders checked.</ResponseField>
+<ResponseField name="totalUpdated" type="number">Number of orders whose status was updated.</ResponseField>
+<ResponseField name="filledCount" type="number">Orders now marked filled.</ResponseField>
+<ResponseField name="rejectedCount" type="number">Orders now marked rejected.</ResponseField>
+<ResponseField name="unchangedCount" type="number">Orders with no status change.</ResponseField>
+<ResponseField name="message" type="string">Summary message.</ResponseField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/admin/orders/reconcile \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### POST /v1/admin/orders/:id/retry
+
+Retry a previously rejected order by resubmitting it to the trading system.
+
+<Note>
+Requires `orders:manage` permission.
+</Note>
+
+<ParamField path="id" type="string" required>Order ID to retry.</ParamField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/admin/orders/ORD-00000001/retry \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**200 OK — example response**
+
+```json
+{
+  "orderId": "ORD-00000001",
+  "transRefCode": "TXN-20240115-001",
+  "previousStatus": "rejected",
+  "currentStatus": "submitted",
+  "eTransCode": "EXT-TXN-20240115-002",
+  "message": "Order resubmitted successfully"
+}
+```
+
+---
+
+## Admin Holdings
+
+### GET /v1/admin/holdings
+
+List holdings across all accounts in the system.
+
+<Note>
+Requires `holdings:read` permission.
+</Note>
+
+#### Query parameters
+
+<ParamField query="page" type="number" default="1">Page number.</ParamField>
+<ParamField query="limit" type="number" default="20">Records per page.</ParamField>
+<ParamField query="sortBy" type="string">Sort column.</ParamField>
+<ParamField query="sortOrder" type="string" default="DESC">Sort direction.</ParamField>
+<ParamField query="accountId" type="string">Filter by account ID.</ParamField>
+<ParamField query="instrumentId" type="string">Filter by instrument ID.</ParamField>
+<ParamField query="tradeSource" type="string">Filter by trade source (e.g. `UTrade`).</ParamField>
+
+```bash cURL
+curl "http://localhost:3002/v1/admin/holdings?accountId=ACC-00000001" \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### GET /v1/admin/holdings/account/:accountId
+
+Retrieve holdings with full valuation for a specific account.
+
+<Note>
+Requires `holdings:read` permission.
+</Note>
+
+<ParamField path="accountId" type="string" required>Account ID.</ParamField>
+
+#### Response
+
+<ResponseField name="accountId" type="string">Account ID.</ResponseField>
+<ResponseField name="holdings" type="array">Array of holding records with market value and unrealised P&L.</ResponseField>
+<ResponseField name="totalMarketValue" type="number">Sum of market values across all holdings.</ResponseField>
+<ResponseField name="totalCostBasis" type="number">Sum of cost bases across all holdings.</ResponseField>
+<ResponseField name="totalUnrealizedPL" type="number">Total unrealised profit/loss.</ResponseField>
+<ResponseField name="totalUnrealizedPLPercent" type="number">Unrealised P&L as a percentage of cost basis.</ResponseField>
+<ResponseField name="currency" type="string">Base currency for the totals.</ResponseField>
+
+```bash cURL
+curl http://localhost:3002/v1/admin/holdings/account/ACC-00000001 \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+## Admin Valuation
+
+### POST /v1/admin/valuation/month-end-snapshot
+
+Manually trigger a month-end valuation snapshot. Creates a point-in-time record of holdings and cash balances for all active accounts. If `day` is omitted, the last business day of the given month is used automatically.
+
+<Note>
+Requires `holdings:manage` permission.
+</Note>
+
+#### Request body
+
+<ParamField body="year" type="number" required>
+  Year for the snapshot (e.g. `2025`). Range: 2020–2100.
+</ParamField>
+
+<ParamField body="month" type="number" required>
+  Month for the snapshot (1–12).
+</ParamField>
+
+<ParamField body="day" type="number">
+  Specific day within the month (1–31). If omitted, the last business day of the month is resolved automatically.
+</ParamField>
+
+#### Response
+
+<ResponseField name="message" type="string">Informational message about the completed snapshot.</ResponseField>
+<ResponseField name="snapshotDate" type="string">The date used for the snapshot (`YYYY-MM-DD`).</ResponseField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/admin/valuation/month-end-snapshot \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{ "year": 2025, "month": 3 }'
+```
+
+**200 OK — example response**
+
+```json
+{
+  "message": "Month-end snapshot completed for 2025-03-31.",
+  "snapshotDate": "2025-03-31"
+}
+```
+
+---
+
+## Trading Representative (TR) Operations
+
+Endpoints under `/v1/tr` are exclusively accessible to users with the `TradingRepresentative` role. They allow TRs to view the accounts they manage and submit portfolio change requests on behalf of clients.
+
+<Warning>
+All `/v1/tr` endpoints require the `TradingRepresentative` role. Requests from other roles will receive `403 Forbidden`.
+</Warning>
+
+### GET /v1/tr/accounts
+
+List all accounts accessible to the authenticated TR user via their assigned TR codes.
+
+```bash cURL
+curl http://localhost:3002/v1/tr/accounts \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+**200 OK — example response**
+
+```json
+{
+  "data": [
+    {
+      "id": "ACC-00000001",
+      "name": "John Doe - Cash Account",
+      "shortName": "JD-CASH",
+      "accountGroupId": "AGR-00000001",
+      "status": "active",
+      "openDate": "2023-06-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### GET /v1/tr/codes
+
+List the TR codes assigned to the authenticated TR user, including account counts per code.
+
+```bash cURL
+curl http://localhost:3002/v1/tr/codes \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+---
+
+### POST /v1/tr/portfolio-requests
+
+Create a portfolio change request for a managed account. The request starts in `pending_user_confirmation` status — the client must confirm before it proceeds to approval.
+
+#### Request body
+
+<ParamField body="accountId" type="string" required>
+  Account ID of the client whose portfolio strategy should change.
+</ParamField>
+
+<ParamField body="suggestedPortfolioId" type="string" required>
+  Portfolio template ID to suggest for the client.
+</ParamField>
+
+<ParamField body="reason" type="string" required>
+  Reason for the portfolio change recommendation.
+</ParamField>
+
+#### Response
+
+<ResponseField name="id" type="string">Created portfolio request ID.</ResponseField>
+<ResponseField name="accountId" type="string">Target account ID.</ResponseField>
+<ResponseField name="requestType" type="string">Request type (e.g. `portfolio_assignment`).</ResponseField>
+<ResponseField name="status" type="string">Initial status (`pending_user_confirmation`).</ResponseField>
+<ResponseField name="requestDate" type="string">ISO 8601 creation timestamp.</ResponseField>
+<ResponseField name="details" type="object">Full details of the suggested change.</ResponseField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/tr/portfolio-requests \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accountId": "ACC-00000001",
+    "suggestedPortfolioId": "TPL-00000002",
+    "reason": "Annual review indicates higher risk tolerance"
+  }'
+```
+
+**201 Created — example response**
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "accountId": "ACC-00000001",
+  "requestType": "portfolio_assignment",
+  "status": "pending_user_confirmation",
+  "requestDate": "2024-01-15T10:00:00.000Z",
+  "details": {
+    "initiatedBy": "trader",
+    "suggestedPortfolioId": "TPL-00000002",
+    "suggestedRiskLevel": "medium",
+    "reason": "Annual review indicates higher risk tolerance"
+  }
+}
+```
+
+---
+
+## File Uploads
+
+### POST /v1/files/upload
+
+Upload a file attachment. Returns a file ID that can be referenced in request bodies (e.g. funding requests).
+
+The request is submitted as `multipart/form-data`.
+
+#### Request fields
+
+<ParamField body="file" type="binary" required>
+  The file to upload.
+</ParamField>
+
+```bash cURL
+curl -X POST http://localhost:3002/v1/files/upload \
+  -H "Authorization: Bearer <accessToken>" \
+  -F "file=@/path/to/document.pdf"
+```
+
+---
+
+### GET /v1/files/:id
+
+Download or retrieve a previously uploaded file by its ID.
+
+<ParamField path="id" type="string" required>File attachment ID.</ParamField>
+
+```bash cURL
+curl http://localhost:3002/v1/files/FILE-00000001 \
+  -H "Authorization: Bearer <accessToken>" \
+  -o downloaded-file.pdf
+```
+
+---
+
+## Health check
+
+### GET /health
+
+Returns the service health status. This endpoint is public — no authentication is required.
+
+```bash cURL
+curl http://localhost:3002/health
+```
+
+**200 OK — example response**
+
+```json
+{
+  "status": "ok"
+}
+```

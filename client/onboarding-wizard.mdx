@@ -1,0 +1,94 @@
+---
+title: "Investment Onboarding Wizard: Six-Step Goal Setup"
+description: "Six-step wizard that guides you from goal setup through risk profiling to a recommended portfolio. Completing it creates your portfolio for admin approval."
+---
+
+When you log in to the client portal for the first time, the onboarding wizard guides you through setting up your investment profile. The wizard collects your goals, assesses your risk tolerance through a scored questionnaire, and produces a recommended portfolio strategy tailored to your answers. Completing the wizard creates your portfolio, which is then submitted for admin approval before becoming active.
+
+## The six-step wizard flow
+
+<Steps>
+  <Step title="Goal setup — choose your investment objective">
+    Navigate to `/objective/goal` to begin. You select the primary reason you are investing — for example, capital growth, income generation, or wealth preservation. Your goal sets the context for the strategy recommendations shown in the next step.
+  </Step>
+
+  <Step title="Portfolio strategy selection — browse model strategies">
+    At `/objective/portfolio-strategy`, you browse the available model portfolio strategies. Each strategy represents a predefined asset allocation (a mix of funds and weightings) designed for a particular risk and return profile. You can review the details of any strategy before moving forward.
+
+    <Tip>
+    You do not need to finalize your strategy here — the questionnaire in the next step may adjust the recommendation based on your risk score.
+    </Tip>
+  </Step>
+
+  <Step title="Risk profiling questionnaire — answer the assessment">
+    At `/objective/create-profile`, you complete a risk profiling questionnaire. Each question has weighted answer options. Your selections produce a numeric score that reflects your investment risk tolerance. Some questions appear conditionally — the questionnaire adapts based on your previous answers.
+  </Step>
+
+  <Step title="Confirm risk assessment — review your result">
+    At `/objective/confirm-risk`, you see the risk profile level calculated from your questionnaire score. You can review the result before confirming. If you disagree with the assessment, you can go back and revise your answers.
+
+    <Note>
+    If you are working with a Trading Representative, they can submit the risk profile request on your behalf from this step.
+    </Note>
+  </Step>
+
+  <Step title="Investment plan result — see your recommendation">
+    At `/objective/result`, the platform shows your recommended investment plan based on your goal and confirmed risk profile. The plan identifies the portfolio strategy that matches your risk level and summarizes the expected asset allocation.
+  </Step>
+
+  <Step title="Investment plan details — review and confirm your plan">
+    At `/objective/investment-plan`, you review the full details of the recommended plan — including the individual fund allocations and target weightings. When you are satisfied, you confirm the plan. This creates your portfolio in the system and submits it for admin approval.
+
+    From the investment plan page, you can also navigate to **Browse Funds** (`/objective/browse-funds`) to explore the complete fund catalog associated with your chosen strategy before confirming.
+  </Step>
+</Steps>
+
+## Risk profile scoring
+
+Your risk profile is determined by the total score of your questionnaire answers:
+
+- Every answer option carries a numeric weight
+- Your total score across all questions maps to a risk profile level — for example, Conservative, Moderate, Balanced, Growth, or Aggressive
+- The risk profile level determines which portfolio strategies are available to you
+- Strategies are linked to risk levels, so clients with a Conservative profile will only be shown strategies designed for lower-risk investors
+
+<Note>
+The exact score thresholds and profile labels are configured by your platform administrator. If you believe your risk profile does not reflect your actual risk tolerance, contact your Trading Representative or the support team to request a reassessment.
+</Note>
+
+## After completing the wizard
+
+Once you confirm your investment plan:
+
+1. A portfolio is created in the system linked to your account
+2. The portfolio starts in **Draft** status and is submitted to the back-office team for approval
+3. You will receive a notification once your portfolio is approved and moved to **Active** status
+4. Until approval, your portfolio appears on the dashboard with a **Pending Approval** banner
+
+<Note>
+You cannot fund or trade on your portfolio until it has been approved by an administrator.
+</Note>
+
+## Frequently asked questions
+
+<AccordionGroup>
+  <Accordion title="What if I select the wrong goal or strategy?">
+    You can navigate back through the wizard at any step before confirming your investment plan. After your portfolio is created and approved, changing your strategy requires submitting a portfolio change request, which goes through a separate approval workflow.
+  </Accordion>
+
+  <Accordion title="What if my risk profile is rejected?">
+    If the admin team rejects your risk profile submission, you will be notified and can restart the questionnaire. A Trading Representative can also submit the risk profile on your behalf if needed.
+  </Accordion>
+
+  <Accordion title="Can my Trading Representative complete the wizard for me?">
+    Yes. When a TR is impersonating your account, they can complete the risk questionnaire and submit a risk profile request on your behalf. The TR must select your account from the Client Selector before starting the wizard. All actions are recorded under your client profile.
+  </Accordion>
+
+  <Accordion title="How long does portfolio approval take?">
+    Approval timelines depend on your platform's back-office team. You will see a **Pending Approval** notice on your dashboard while the review is in progress. Contact your Trading Representative or the support team if you have not received a decision within a reasonable timeframe.
+  </Accordion>
+
+  <Accordion title="Can I have more than one portfolio?">
+    The system supports multiple portfolios per client. However, only one portfolio is designated as your **primary portfolio**, and only the primary portfolio can be updated through the portfolio change request workflow.
+  </Accordion>
+</AccordionGroup>

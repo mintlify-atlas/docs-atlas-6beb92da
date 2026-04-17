@@ -1,0 +1,61 @@
+---
+title: "UTRADE Robo Advisory Platform Overview"
+description: "UTRADE Robo Advisory automates portfolio recommendations, trading, and approval workflows for UOB Kay Hian (Cambodia) across dedicated admin and client portals."
+---
+
+The UTRADE Robo Advisor is a wealth management platform built for **UOB Kay Hian (Cambodia)**. It automates portfolio recommendations based on client risk profiles, orchestrates trading through FNZ/Tapico, and provides dedicated interfaces for both clients and administrators. The platform spans five repositories — two NestJS backends, two React frontends, and one data loader service.
+
+## Business capabilities
+
+The platform delivers eight core capabilities across the client and admin surfaces:
+
+| Capability | Description |
+|---|---|
+| **Risk profiling** | Questionnaire-based risk assessment with score-to-profile mapping |
+| **Portfolio management** | Automated portfolio allocation based on model templates and risk levels |
+| **Trading** | Order execution via FNZ/Tapico integration with multi-currency support |
+| **Request workflows** | Funding deposits, withdrawals, and portfolio strategy changes with approval flows |
+| **User sync** | Automated user synchronization from SUS8 Redshift datalake (runs at 2 AM daily) |
+| **SSO authentication** | Keycloak OIDC integration with PKCE for secure single sign-on |
+| **RBAC** | Role-based access control with permission scoping: global → company → branch → own |
+| **Reporting** | Holdings tracking, valuation snapshots, and export capabilities |
+
+## Repositories
+
+The platform is a **multi-repo workspace** — not a monorepo. Each folder is an independent git repository with its own `package.json`, CI pipeline, and Changesets versioning. There is no root `.git`.
+
+| Repository | Type | Version | Port | Role |
+|---|---|---|---|---|
+| `ms-robo-admin` | NestJS backend | 1.9.4 | 3002 | Admin API — sole database schema owner |
+| `ms-robo-web` | NestJS backend | 1.10.1 | 3001 | Client API — schema consumer, never creates migrations |
+| `mfe-robo-admin` | React frontend | 1.4.5 | 5173 | Admin dashboard UI |
+| `mfe-robo-web` | React frontend | 1.5.2 | 5174 | Client web portal |
+| `ms-robo-dataloader` | Placeholder | — | — | Reserved for future data loading; currently empty |
+
+<Note>
+`ms-robo-dataloader` is a placeholder repository containing only `.git`, `.gitignore`, and `README.md`. Do not add code to it without confirming with the project owner.
+</Note>
+
+## User roles
+
+The platform serves two primary user groups through separate interfaces:
+
+<CardGroup cols={2}>
+  <Card title="Clients" icon="user">
+    Receive automated portfolio recommendations, execute trades, submit funding and withdrawal requests, and monitor portfolio performance through the client portal at port 5174.
+  </Card>
+  <Card title="Admins and trading representatives" icon="shield">
+    Manage client accounts, approve funding and portfolio requests, and oversee portfolio operations through the admin portal at port 5173. Backed by the Admin API at port 3002.
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="System architecture" icon="diagram-project" href="/architecture">
+    High-level architecture diagram, repository roles, technology stack, and code structure patterns for both backends and frontends.
+  </Card>
+  <Card title="Local development setup" icon="laptop-code" href="/local-setup">
+    Step-by-step instructions to start Docker services, install dependencies, and run all five services locally.
+  </Card>
+</CardGroup>

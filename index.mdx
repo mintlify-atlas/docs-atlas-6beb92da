@@ -1,97 +1,79 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "UTRADE Robo Advisory: Automated Wealth Management Platform"
+description: "UTRADE Robo Advisory is a full-stack wealth management platform for UOB Kay Hian (Cambodia). Manage portfolios, automate risk profiling, and execute trades."
 ---
 
-## Setting up
+UTRADE Robo Advisory is a wealth management platform built for UOB Kay Hian (Cambodia). It delivers automated portfolio recommendations, questionnaire-based risk profiling, trading execution via FNZ/Tapico, and a dual-portal experience — a client-facing web portal for self-service investment management and an admin dashboard for back-office operations, approvals, and user management.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Platform Architecture" icon="diagram-project" href="/architecture">
+    Understand the dual-portal architecture, microservice layout, and technology stack powering UTRADE Robo.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Local Setup" icon="computer" href="/local-setup">
+    Get all five services running locally with Docker, Bun, and Node in minutes.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Admin Portal" icon="gauge" href="/admin/overview">
+    Explore the admin dashboard — client management, portfolio approvals, user roles, and reporting.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Client Portal" icon="user" href="/client/overview">
+    Walk through the client experience — risk profiling, portfolio setup, funding, and withdrawals.
   </Card>
-</Columns>
+  <Card title="Authentication" icon="lock" href="/auth/overview">
+    Learn how users authenticate with username/password or Keycloak SSO using the PKCE flow.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/admin/auth">
+    Browse the full REST API for both the Admin API (port 3002) and Client API (port 3001).
+  </Card>
+</CardGroup>
 
-## Create beautiful pages
+## Platform overview
 
-Everything you need to create world-class documentation.
+UTRADE Robo Advisory consists of five repositories working together:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+| Service | Role | Port |
+|---|---|---|
+| `ms-robo-admin` | Admin REST API — schema owner | 3002 |
+| `ms-robo-web` | Client REST API — schema consumer | 3001 |
+| `mfe-robo-admin` | Admin dashboard (React + Vite) | 5173 |
+| `mfe-robo-web` | Client web portal (React + Vite) | 5174 |
+| `ms-robo-dataloader` | Data loading service (placeholder) | — |
 
-## Need inspiration?
+## Key capabilities
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Risk profiling" icon="chart-pie">
+    Questionnaire-based assessment maps client answers to risk profiles and recommends matching portfolio strategies automatically.
+  </Card>
+  <Card title="Portfolio management" icon="briefcase">
+    Model portfolio templates define target allocations. Client portfolios are created, tracked, and updated through approval workflows.
+  </Card>
+  <Card title="Trading execution" icon="arrow-right-arrow-left">
+    Orders are placed and settled via the FNZ/Tapico integration. Holdings, valuations, and snapshots are tracked in real time.
+  </Card>
+  <Card title="Approval workflows" icon="circle-check">
+    Funding deposits, withdrawals, and portfolio strategy changes flow through a structured approval process managed by back-office staff.
+  </Card>
+  <Card title="SSO authentication" icon="key">
+    Keycloak OIDC with PKCE provides single sign-on for both portals, with fallback username/password login.
+  </Card>
+  <Card title="Data synchronization" icon="rotate">
+    Client user data is synced automatically from the SUS8 Redshift datalake every day at 2 AM.
+  </Card>
+</CardGroup>
+
+## Get started
+
+<Steps>
+  <Step title="Set up local infrastructure">
+    Start PostgreSQL, Keycloak, and SonarQube using Docker Compose. See [Local Setup](/local-setup) for the full walkthrough.
+  </Step>
+  <Step title="Start the backend services">
+    Run `bun run start:dev` inside `ms-robo-admin` (port 3002) and `ms-robo-web` (port 3001). Both expose Swagger docs at `/docs`.
+  </Step>
+  <Step title="Start the frontend apps">
+    Run `bun run dev` inside `mfe-robo-admin` (port 5173) and `mfe-robo-web` (port 5174). Log in with the test credentials from [Local Setup](/local-setup).
+  </Step>
+  <Step title="Explore the API">
+    Visit the [Admin API Reference](/api/admin/auth) or [Client API Reference](/api/client/auth) to start making calls.
+  </Step>
+</Steps>
